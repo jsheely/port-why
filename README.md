@@ -21,6 +21,10 @@ flutter test
 
 Shortcuts: `Ctrl+F` filter, `Esc` clear the filter, `F5` rescan from scratch.
 
+The app icon is drawn by `tool/make_icon.ps1`, which rewrites
+`windows/runner/resources/app_icon.ico`; edit the script and re-run it to
+change the icon.
+
 ## How it works
 
 Everything is read in-process through `dart:ffi` (no `netstat` or PowerShell
