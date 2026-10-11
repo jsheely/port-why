@@ -604,7 +604,9 @@ class _SearchFieldState extends State<_SearchField> {
         decoration: InputDecoration(
           isDense: true,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 8),
+          // Lower than the middle: the line leaves more room over its
+          // capitals than under them, and the icons sit on its middle.
+          contentPadding: const EdgeInsets.only(top: 11, bottom: 5),
           hintText: 'Filter by port, project, process, folder…  (Ctrl+F)',
           hintStyle: mono.copyWith(
             fontSize: 12.5,
@@ -621,6 +623,13 @@ class _SearchFieldState extends State<_SearchField> {
                   tooltip: 'Clear filter (Esc)',
                   icon: const Icon(Icons.close_rounded, size: 17),
                   color: dim,
+                  // No taller than the field, or the field grows to hold
+                  // it and leaves the text at the top.
+                  padding: EdgeInsets.zero,
+                  constraints: iconBox,
+                  style: IconButton.styleFrom(
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                   onPressed: widget.onClear,
                 )
               : null,
