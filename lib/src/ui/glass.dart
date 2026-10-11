@@ -1,5 +1,6 @@
 import 'dart:math' as math;
-import 'dart:ui' show ImageFilter;
+import 'dart:typed_data';
+import 'dart:ui' show ImageFilter, VertexMode, Vertices;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -74,6 +75,7 @@ class Glass extends StatelessWidget {
         strength: strength,
         emphasis: emphasis,
         pointer: pointer,
+        pixel: 1 / MediaQuery.devicePixelRatioOf(context),
       ),
       // Ink has to land on top of the glass, not on the page far beneath it.
       child: Material(
@@ -87,7 +89,9 @@ class Glass extends StatelessWidget {
       frosted = Stack(
         children: [
           if (strength > 0)
-            Positioned.fill(child: Frost(shape: shape, opacity: strength)),
+            Positioned.fill(
+              child: Frost(shape: shape, opacity: strength),
+            ),
           pane,
         ],
       );
@@ -157,6 +161,33 @@ class GlassBorder extends ShapeBorder {
       ..close();
   }
 
+  /// The same outline as a ring of points, clockwise from the top left, with
+  /// each curve broken into steps too short to see.
+  List<Offset> outline(Rect rect) {
+    final top = flatTop ? 0.0 : radius;
+    final points = <Offset>[];
+    void arc(Offset centre, double radius, double from) {
+      // A square corner is a single point.
+      final steps = radius > 0 ? (radius * 0.8).ceil().clamp(4, 32) : 1;
+      for (var i = 0; i <= steps; i++) {
+        final angle = from + math.pi / 2 * i / steps;
+        points.add(centre + Offset(math.cos(angle), math.sin(angle)) * radius);
+      }
+    }
+
+    arc(Offset(rect.left + top, rect.top + top), top, math.pi);
+    arc(Offset(rect.right - top, rect.top + top), top, -math.pi / 2);
+    if (cut > 0) {
+      points
+        ..add(Offset(rect.right, rect.bottom - cut))
+        ..add(Offset(rect.right - cut, rect.bottom));
+    } else {
+      arc(Offset(rect.right - radius, rect.bottom - radius), radius, 0);
+    }
+    arc(Offset(rect.left + radius, rect.bottom - radius), radius, math.pi / 2);
+    return points;
+  }
+
   @override
   Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
       getOuterPath(rect, textDirection: textDirection);
@@ -187,6 +218,7 @@ class _GlassPainter extends CustomPainter {
     required this.strength,
     required this.emphasis,
     required this.pointer,
+    required this.pixel,
   }) : super(repaint: pointer);
 
   final Color accent;
@@ -196,6 +228,11 @@ class _GlassPainter extends CustomPainter {
   final double emphasis;
   final ValueListenable<Offset?>? pointer;
 
+  /// How wide one pixel of the screen is.
+  final double pixel;
+
+  static const _rimWidth = 1.2;
+
   @override
   void paint(Canvas canvas, Size size) {
     if (strength <= 0) return;
@@ -204,26 +241,50 @@ class _GlassPainter extends CustomPainter {
         Colors.white.withValues(alpha: alpha * strength);
     Color tinted(double alpha) => accent.withValues(alpha: alpha * strength);
 
-    // Each fill is poured over the whole clip with drawPaint, never drawn as
-    // a rectangle or circle. On Windows the renderer (Impeller) draws those
-    // shapes from a distance field, and gives one a gradient by rendering
-    // both off screen and blending them: three extra render passes a fill, on
-    // every pane, sixty times a second. Measured, that was most of a frame.
+    final across = rect.bottomRight - rect.topLeft;
+    // How far from the top left corner to the bottom right a point is.
+    double along(Offset point) =>
+        ((point.dx - rect.left) * across.dx +
+            (point.dy - rect.top) * across.dy) /
+        across.distanceSquared;
+    // The rim changes colour halfway along, which needs points there.
+    final edge = _Edge(shape.outline(rect), split: (at) => along(at) - 0.5);
+    final half = pixel / 2;
+    void draw(Vertices mesh) {
+      canvas.drawVertices(mesh, BlendMode.dst, Paint());
+      mesh.dispose();
+    }
+
+    // The pane is drawn as meshes that fade out across the last pixel, not
+    // as paths or under a clip. The renderer on Windows (Impeller, on OpenGL)
+    // has no multisampling: a path or a clip there either has a pixel or does
+    // not, which turns every curve and slant into a staircase. It does smooth
+    // rectangles and circles, by drawing them from a distance field, but it
+    // gives one a gradient by rendering both off screen and blending them:
+    // three extra render passes a fill, on every pane, sixty times a second.
+    // Measured, that was most of a frame.
+    final smoke = Neon.smoke.withValues(alpha: tint * strength);
+    draw(
+      edge.mesh(
+        [-half, half],
+        (at, ring) => ring == 0 ? smoke.withValues(alpha: 0) : smoke,
+        filled: true,
+      ),
+    );
+    // The body of the pane catches light from the top left...
+    draw(
+      edge.mesh(
+        [-half, half],
+        (at, ring) => white(ring == 0 ? 0 : 0.10 - 0.085 * along(at)),
+        filled: true,
+      ),
+    );
+
+    // What is left is too faint for its hard edge to show, and is poured over
+    // the whole clip with drawPaint, which costs no extra passes either.
     canvas
       ..save()
       ..clipPath(shape.getOuterPath(rect))
-      ..drawPaint(
-        Paint()..color = Neon.smoke.withValues(alpha: tint * strength),
-      )
-      // The body of the pane catches light from the top left...
-      ..drawPaint(
-        Paint()
-          ..shader = LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [white(0.10), white(0.015)],
-          ).createShader(rect),
-      )
       // ...and takes a little colour from whatever it is showing.
       ..drawPaint(
         Paint()
@@ -241,40 +302,45 @@ class _GlassPainter extends CustomPainter {
         Paint()
           ..shader = RadialGradient(
             colors: [
-              Color.lerp(Colors.white, accent, 0.5)!.withValues(
-                alpha: 0.17 * strength,
-              ),
+              Color.lerp(
+                Colors.white,
+                accent,
+                0.5,
+              )!.withValues(alpha: 0.17 * strength),
               tinted(0),
             ],
           ).createShader(Rect.fromCircle(center: at, radius: reach)),
       );
     }
+    canvas.restore();
 
-    // Inset so the whole stroke falls inside the outline.
-    final rim = shape.getOuterPath(rect.deflate(0.6));
-    canvas.drawPath(
-      rim,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.2
-        ..shader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [white(0.5), white(0.08), tinted(0.3 + 0.6 * emphasis)],
-          stops: const [0, 0.5, 1],
-        ).createShader(rect),
+    // The rim is solid for its width just inside the outline, and clear a
+    // pixel either side of that.
+    final rim = [white(0.5), white(0.08), tinted(0.3 + 0.6 * emphasis)];
+    draw(
+      edge.mesh([-half, half, _rimWidth - half, _rimWidth + half], (at, ring) {
+        final t = along(at) * 2;
+        final color = t < 1
+            ? Color.lerp(rim[0], rim[1], t)!
+            : Color.lerp(rim[1], rim[2], t - 1)!;
+        return ring == 1 || ring == 2 ? color : color.withValues(alpha: 0);
+      }),
     );
     if (emphasis > 0) {
-      canvas.drawPath(
-        rim,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.6
-          ..color = tinted(0.55 * emphasis)
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-      );
+      canvas
+        ..save()
+        ..clipPath(shape.getOuterPath(rect))
+        ..drawPath(
+          // Inset so the whole stroke falls inside the outline.
+          shape.getOuterPath(rect.deflate(_rimWidth / 2)),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.6
+            ..color = tinted(0.55 * emphasis)
+            ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+        )
+        ..restore();
     }
-    canvas.restore();
   }
 
   @override
@@ -284,7 +350,97 @@ class _GlassPainter extends CustomPainter {
       old.tint != tint ||
       old.strength != strength ||
       old.emphasis != emphasis ||
-      old.pointer != pointer;
+      old.pointer != pointer ||
+      old.pixel != pixel;
+}
+
+/// A pane's outline as a ring of points, each with the way squarely out of
+/// the pane from there.
+class _Edge {
+  /// Colour is only blended in straight lines between points, so wherever
+  /// [split] changes sign along the outline a point is added.
+  _Edge(List<Offset> outline, {required double Function(Offset at) split}) {
+    for (var i = 0; i < outline.length; i++) {
+      final from = outline[i];
+      final to = outline[(i + 1) % outline.length];
+      if ((to - from).distanceSquared < 1e-6) continue;
+      _points.add(from);
+      final a = split(from), b = split(to);
+      if (a * b < 0) _points.add(Offset.lerp(from, to, a / (a - b))!);
+    }
+    Offset outward(Offset from, Offset to) {
+      final side = to - from;
+      return Offset(side.dy, -side.dx) / side.distance;
+    }
+
+    final count = _points.length;
+    for (var i = 0; i < count; i++) {
+      final before = outward(_points[(i - 1 + count) % count], _points[i]);
+      final after = outward(_points[i], _points[(i + 1) % count]);
+      // Stepping along the mitre keeps a ring parallel to the outline on both
+      // sides of a corner.
+      _mitres.add(
+        (before + after) / (1 + before.dx * after.dx + before.dy * after.dy),
+      );
+    }
+  }
+
+  final _points = <Offset>[];
+  final _mitres = <Offset>[];
+
+  /// Bands between copies of the outline, each moved in by one of [depths],
+  /// coloured by [shade] at every point of every ring. With [filled], the
+  /// innermost ring is filled in as well.
+  Vertices mesh(
+    List<double> depths,
+    Color Function(Offset at, int ring) shade, {
+    bool filled = false,
+  }) {
+    final count = _points.length;
+    final rings = depths.length;
+    final bands = rings - 1;
+    final hub = count * rings;
+    final positions = Float32List((hub + 1) * 2);
+    final shades = Int32List(hub + 1);
+    final indices = Uint16List(count * (bands * 6 + (filled ? 3 : 0)));
+    var index = 0;
+    var middle = Offset.zero;
+    for (var i = 0; i < count; i++) {
+      final next = (i + 1) % count;
+      for (var ring = 0; ring < rings; ring++) {
+        final at = i * rings + ring;
+        final other = next * rings + ring;
+        final vertex = _points[i] - _mitres[i] * depths[ring];
+        positions[at * 2] = vertex.dx;
+        positions[at * 2 + 1] = vertex.dy;
+        shades[at] = shade(vertex, ring).toARGB32();
+        if (ring < bands) {
+          indices
+            ..[index++] = at
+            ..[index++] = other
+            ..[index++] = other + 1
+            ..[index++] = at
+            ..[index++] = other + 1
+            ..[index++] = at + 1;
+        } else if (filled) {
+          indices
+            ..[index++] = hub
+            ..[index++] = at
+            ..[index++] = other;
+        }
+      }
+      middle += _points[i] / count.toDouble();
+    }
+    positions[hub * 2] = middle.dx;
+    positions[hub * 2 + 1] = middle.dy;
+    shades[hub] = shade(middle, bands).toARGB32();
+    return Vertices.raw(
+      VertexMode.triangles,
+      positions,
+      colors: shades,
+      indices: indices,
+    );
+  }
 }
 
 /// The light a lit pane throws on what is around it.
