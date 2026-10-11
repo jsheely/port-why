@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../models.dart';
+import 'soft_edge.dart';
 
 /// The neon palette. Everything on screen is one of these over near-black.
 abstract final class Neon {
@@ -90,7 +91,7 @@ const cyberScheme = ColorScheme(
 ThemeData buildTheme() {
   const scheme = cyberScheme;
   // Corners are cut, not rounded, wherever something is not made of glass.
-  final cut = BeveledRectangleBorder(borderRadius: BorderRadius.circular(6));
+  const cut = CutBorder();
   final readout = mono.copyWith(fontSize: 12, color: scheme.onSurface);
 
   return ThemeData(
@@ -121,7 +122,7 @@ ThemeData buildTheme() {
       backgroundColor: Neon.smoke.withValues(alpha: 0.96),
       contentTextStyle: readout.copyWith(height: 1.35),
       shape: cut.copyWith(
-        borderRadius: BorderRadius.circular(9),
+        cut: 9,
         side: BorderSide(color: Neon.cyan.withValues(alpha: 0.6)),
       ),
     ),
@@ -150,5 +151,5 @@ ButtonStyle neonButton(Color color) => FilledButton.styleFrom(
   foregroundColor: color,
   overlayColor: color,
   side: BorderSide(color: color.withValues(alpha: 0.7)),
-  shape: BeveledRectangleBorder(borderRadius: BorderRadius.circular(6)),
+  shape: const CutBorder(),
 );

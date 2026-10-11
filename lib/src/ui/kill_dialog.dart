@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models.dart';
 import 'glass.dart';
+import 'soft_edge.dart';
 import 'theme.dart';
 
 /// Asks before killing [entry]'s process. Resolves to true only on an explicit
@@ -74,7 +75,10 @@ class _KillDialog extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        CustomPaint(size: const Size.fromHeight(7), painter: _HazardPainter(danger)),
+        CustomPaint(
+          size: const Size.fromHeight(7),
+          painter: _HazardPainter(danger, radius: _radius),
+        ),
         Padding(
           padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
           child: Column(
@@ -188,7 +192,7 @@ class _KillDialog extends StatelessWidget {
                   scale: 0.9 + 0.1 * Curves.easeOutBack.transform(animation.value),
                   child: Glass(
                     accent: danger,
-                    radius: 20,
+                    radius: _radius,
                     cut: 22,
                     blur: 28,
                     tint: 0.68,
@@ -206,36 +210,43 @@ class _KillDialog extends StatelessWidget {
     );
   }
 
+  static const _radius = 20.0;
+
   static String _summarise(List<int> ports) => ports.length <= 6
       ? ports.join(', ')
       : '${ports.take(6).join(', ')} and ${ports.length - 6} more';
 }
 
-/// The slanted stripes of warning tape.
+/// The slanted stripes of warning tape, along the top of a pane whose
+/// corners are rounded by [radius].
 class _HazardPainter extends CustomPainter {
-  const _HazardPainter(this.color);
+  const _HazardPainter(this.color, {required this.radius});
 
   final Color color;
+  final double radius;
 
   static const _stripe = 9.0;
 
   @override
   void paint(Canvas canvas, Size size) {
     final lean = size.height;
-    final tape = Path();
+    // The tape stops at the pane's corners by its own shape. The pane's clip
+    // would cut it off there too, but along a staircase.
+    final pane = GlassBorder(radius: radius)
+        .outline(Rect.fromLTWH(0, 0, size.width, size.height + 2 * radius));
+    final tape = color.withValues(alpha: 0.85);
     for (var x = -lean; x < size.width; x += 2 * _stripe) {
-      tape
-        ..moveTo(x, size.height)
-        ..lineTo(x + lean, 0)
-        ..lineTo(x + lean + _stripe, 0)
-        ..lineTo(x + _stripe, size.height)
-        ..close();
+      final stripe = SoftEdge.within([
+        Offset(x, size.height),
+        Offset(x + lean, 0),
+        Offset(x + lean + _stripe, 0),
+        Offset(x + _stripe, size.height),
+      ], pane);
+      SoftEdge(stripe).fill(canvas, tape);
     }
-    canvas
-      ..clipRect(Offset.zero & size)
-      ..drawPath(tape, Paint()..color = color.withValues(alpha: 0.85));
   }
 
   @override
-  bool shouldRepaint(_HazardPainter old) => old.color != color;
+  bool shouldRepaint(_HazardPainter old) =>
+      old.color != color || old.radius != radius;
 }
