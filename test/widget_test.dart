@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -173,6 +174,15 @@ void main() {
     await tester.tap(find.text('PORT'));
     await tester.pump();
     expect(portsShown(tester), [445, 5173, 5174, 5432, 8000]);
+
+    // The other orders are shut away until the pointer is over the sort bar.
+    expect(tester.getSize(find.text('PROJECT')).width, greaterThan(0));
+    expect(find.text('PROJECT').hitTestable(), findsNothing);
+    final mouse = await tester.createGesture(kind: PointerDeviceKind.mouse);
+    await mouse.addPointer(location: Offset.zero);
+    addTearDown(mouse.removePointer);
+    await mouse.moveTo(tester.getCenter(find.text('SORT')));
+    await settle(tester);
     await tester.tap(find.text('PROJECT'));
     await tester.pump();
     // api, shop, shop, then the rows with no project.
@@ -388,6 +398,8 @@ void main() {
       // The box folds away again.
       expect(find.byType(TextField), findsOneWidget);
 
+      // The line slid along to show the box, and takes no clicks until it stops.
+      await settle(tester);
       await tester.tap(find.byTooltip('Stop watching port 3000'));
       await tester.pump();
       expect(favorite(3000), findsNothing);

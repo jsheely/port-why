@@ -1,65 +1,168 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'theme.dart';
 
-/// Lays the app's own title bar over the top of [child], where Windows would
-/// have drawn one, and tells [child] through its padding to keep clear of it.
-class WindowFrame extends StatelessWidget {
+/// Answered by windows/runner/flutter_window.cpp.
+const _window = MethodChannel('port_why/window');
+
+/// Lays the window's buttons over the top of [child], where Windows would
+/// have drawn a title bar, and tells [child] through its padding how deep
+/// that strip is.
+///
+/// The strip is the page's to draw in. Whatever it puts there moves the
+/// window when dragged, as a title bar does, apart from what it wraps in a
+/// [TitleBarControl].
+class WindowFrame extends StatefulWidget {
   const WindowFrame({super.key, required this.child});
 
   final Widget child;
 
   @override
+  State<WindowFrame> createState() => _WindowFrameState();
+}
+
+class _WindowFrameState extends State<WindowFrame> {
+  /// Every [TitleBarControl] on screen.
+  final _controls = <BuildContext>{};
+
+  /// Their edges as the runner last heard them.
+  List<double>? _reported;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback(_report);
+  }
+
+  /// Tells the runner where the controls are, after any frame that moved
+  /// them. Nothing says when one has moved, so each frame looks.
+  void _report(Duration _) {
+    if (!mounted) return;
+    WidgetsBinding.instance.addPostFrameCallback(_report);
+
+    final edges = <double>[];
+    for (final control in _controls) {
+      final box = control.findRenderObject();
+      if (box is! RenderBox || !box.hasSize) continue;
+      final rect = MatrixUtils.transformRect(
+        box.getTransformTo(null),
+        Offset.zero & box.size,
+      );
+      if (rect.top >= TitleBar.height) continue;
+      edges.addAll([rect.left, rect.top, rect.right, rect.bottom]);
+    }
+    if (listEquals(edges, _reported)) return;
+    _reported = edges;
+    _send(edges);
+  }
+
+  Future<void> _send(List<double> edges) async {
+    try {
+      await _window.invokeMethod<void>(
+        'setControls',
+        Float64List.fromList(edges),
+      );
+    } on MissingPluginException {
+      // No runner to tell: a test, or not Windows.
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        MediaQuery(
-          data: media.copyWith(
-            padding: media.padding.copyWith(
-              top: media.padding.top + TitleBar.height,
+    return _TitleBarScope(
+      controls: _controls,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          MediaQuery(
+            data: media.copyWith(
+              padding: media.padding.copyWith(
+                top: media.padding.top + TitleBar.height,
+              ),
             ),
+            child: widget.child,
           ),
-          child: child,
-        ),
-        // Above the navigator, so the window can still be closed from behind
-        // a dialog.
-        const Positioned(
-          top: 0,
-          left: 0,
-          right: 0,
-          height: TitleBar.height,
-          child: TitleBar(),
-        ),
-      ],
+          // Above the navigator, so the window can still be closed from
+          // behind a dialog.
+          const Positioned(
+            top: 0,
+            right: 0,
+            height: TitleBar.height,
+            child: TitleBar(),
+          ),
+        ],
+      ),
     );
   }
 }
 
-/// The strip the window is moved by, and its minimize, maximize and close
-/// buttons.
+class _TitleBarScope extends InheritedWidget {
+  const _TitleBarScope({required this.controls, required super.child});
+
+  final Set<BuildContext> controls;
+
+  @override
+  bool updateShouldNotify(_TitleBarScope old) => false;
+}
+
+/// Something in the title bar that is clicked rather than dragged: Windows
+/// leaves the pointer to [child] instead of moving the window by it.
+class TitleBarControl extends StatefulWidget {
+  const TitleBarControl({super.key, required this.child});
+
+  final Widget child;
+
+  @override
+  State<TitleBarControl> createState() => _TitleBarControlState();
+}
+
+class _TitleBarControlState extends State<TitleBarControl> {
+  Set<BuildContext>? _controls;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _controls?.remove(context);
+    _controls = context
+        .dependOnInheritedWidgetOfExactType<_TitleBarScope>()
+        ?.controls;
+    _controls?.add(context);
+  }
+
+  @override
+  void dispose() {
+    _controls?.remove(context);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
+/// The window's minimize, maximize and close buttons, at the right-hand end
+/// of the strip it is moved by.
 ///
-/// Only the buttons are Flutter's. The rest of the strip the runner hands to
-/// Windows as a title bar, so dragging it, double-clicking it and
-/// right-clicking it do what they do on any other window. Its size is
-/// therefore repeated in windows/runner/win32_window.cpp, and does not grow
-/// with the text.
+/// The runner hands that strip to Windows as a title bar, so dragging it,
+/// double-clicking it and right-clicking it do what they do on any other
+/// window. Its height is therefore repeated in
+/// windows/runner/win32_window.cpp, and does not grow with the text.
 class TitleBar extends StatefulWidget {
   const TitleBar({super.key});
 
-  static const height = 32.0;
+  static const height = 52.0;
   static const buttonWidth = 46.0;
+
+  /// The room the buttons take up, for a page to keep clear of.
+  static const buttonsWidth = 3 * buttonWidth;
 
   @override
   State<TitleBar> createState() => _TitleBarState();
 }
 
 class _TitleBarState extends State<TitleBar> {
-  /// Answered by windows/runner/flutter_window.cpp.
-  static const _window = MethodChannel('port_why/window');
-
   bool _isMaximized = false;
 
   @override
@@ -81,32 +184,34 @@ class _TitleBarState extends State<TitleBar> {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        _WindowButton(
-          label: 'Minimize',
-          icon: Icons.remove_rounded,
-          color: Neon.cyan,
-          onTap: () => _window.invokeMethod<void>('minimize'),
-        ),
-        _WindowButton(
-          label: _isMaximized ? 'Restore' : 'Maximize',
-          icon: _isMaximized
-              ? Icons.filter_none_rounded
-              : Icons.crop_square_rounded,
-          iconSize: _isMaximized ? 13 : 15,
-          color: Neon.cyan,
-          onTap: () => _window.invokeMethod<void>('toggleMaximize'),
-        ),
-        _WindowButton(
-          label: 'Close',
-          icon: Icons.close_rounded,
-          color: Neon.pink,
-          onTap: () => _window.invokeMethod<void>('close'),
-        ),
-      ],
+    return TitleBarControl(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _WindowButton(
+            label: 'Minimize',
+            icon: Icons.remove_rounded,
+            color: Neon.cyan,
+            onTap: () => _window.invokeMethod<void>('minimize'),
+          ),
+          _WindowButton(
+            label: _isMaximized ? 'Restore' : 'Maximize',
+            icon: _isMaximized
+                ? Icons.filter_none_rounded
+                : Icons.crop_square_rounded,
+            iconSize: _isMaximized ? 13 : 15,
+            color: Neon.cyan,
+            onTap: () => _window.invokeMethod<void>('toggleMaximize'),
+          ),
+          _WindowButton(
+            label: 'Close',
+            icon: Icons.close_rounded,
+            color: Neon.pink,
+            onTap: () => _window.invokeMethod<void>('close'),
+          ),
+        ],
+      ),
     );
   }
 }

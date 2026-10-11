@@ -31,8 +31,8 @@ class FlutterWindow : public Win32Window {
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
 
-  // Carries the title bar's buttons from Dart, and whether the window is
-  // maximized back to it.
+  // Carries the title bar's buttons and the whereabouts of its controls from
+  // Dart, and whether the window is maximized back to it.
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       window_channel_;
   bool is_maximized_ = false;

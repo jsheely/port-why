@@ -4,6 +4,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "flutter/generated_plugin_registrant.h"
 
@@ -29,7 +30,8 @@ bool FlutterWindow::OnCreate() {
   }
   RegisterPlugins(flutter_controller_->engine());
 
-  // The buttons of the title bar the app draws, in lib/src/ui/title_bar.dart.
+  // The title bar the app draws, in lib/src/ui/title_bar.dart: its buttons,
+  // and where they and its other controls are.
   window_channel_ =
       std::make_unique<flutter::MethodChannel<flutter::EncodableValue>>(
           flutter_controller_->engine()->messenger(), "port_why/window",
@@ -47,6 +49,14 @@ bool FlutterWindow::OnCreate() {
                       IsZoomed(window) ? SC_RESTORE : SC_MAXIMIZE, 0);
         } else if (method == "close") {
           PostMessage(window, WM_CLOSE, 0, 0);
+        } else if (method == "setControls") {
+          const auto* edges =
+              std::get_if<std::vector<double>>(call.arguments());
+          if (!edges) {
+            result->Error("bad-arguments", "Expected a list of edges.");
+            return;
+          }
+          SetTitleBarControls(*edges);
         } else {
           result->NotImplemented();
           return;

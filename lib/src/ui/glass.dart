@@ -20,6 +20,7 @@ class Glass extends StatelessWidget {
     this.accent = Neon.cyan,
     this.radius = 16,
     this.cut = 0,
+    this.flatTop = false,
     this.blur = 22,
     this.tint = 0.46,
     this.strength = 1,
@@ -37,6 +38,10 @@ class Glass extends StatelessWidget {
 
   /// How much of the bottom-right corner is sliced off.
   final double cut;
+
+  /// True for a pane hung from the top of the window, whose top corners are
+  /// square to meet it.
+  final bool flatTop;
   final double blur;
 
   /// How dark the glass itself is, from clear to opaque.
@@ -60,7 +65,7 @@ class Glass extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final shape = GlassBorder(radius: radius, cut: cut);
+    final shape = GlassBorder(radius: radius, cut: cut, flatTop: flatTop);
     final pane = CustomPaint(
       painter: _GlassPainter(
         accent: accent,
@@ -111,12 +116,14 @@ class Glass extends StatelessWidget {
 }
 
 /// The outline every pane shares: a rounded rectangle, with the bottom-right
-/// corner sliced off when [cut] is positive.
+/// corner sliced off when [cut] is positive, and the top corners left square
+/// with [flatTop].
 class GlassBorder extends ShapeBorder {
-  const GlassBorder({this.radius = 16, this.cut = 0});
+  const GlassBorder({this.radius = 16, this.cut = 0, this.flatTop = false});
 
   final double radius;
   final double cut;
+  final bool flatTop;
 
   @override
   EdgeInsetsGeometry get dimensions => EdgeInsets.zero;
@@ -124,19 +131,29 @@ class GlassBorder extends ShapeBorder {
   @override
   Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
     final corner = Radius.circular(radius);
+    final top = flatTop ? 0.0 : radius;
+    final topCorner = Radius.circular(top);
     if (cut <= 0) {
-      return Path()..addRRect(RRect.fromRectAndRadius(rect, corner));
+      return Path()..addRRect(
+        RRect.fromRectAndCorners(
+          rect,
+          topLeft: topCorner,
+          topRight: topCorner,
+          bottomLeft: corner,
+          bottomRight: corner,
+        ),
+      );
     }
     return Path()
-      ..moveTo(rect.left + radius, rect.top)
-      ..lineTo(rect.right - radius, rect.top)
-      ..arcToPoint(Offset(rect.right, rect.top + radius), radius: corner)
+      ..moveTo(rect.left + top, rect.top)
+      ..lineTo(rect.right - top, rect.top)
+      ..arcToPoint(Offset(rect.right, rect.top + top), radius: topCorner)
       ..lineTo(rect.right, rect.bottom - cut)
       ..lineTo(rect.right - cut, rect.bottom)
       ..lineTo(rect.left + radius, rect.bottom)
       ..arcToPoint(Offset(rect.left, rect.bottom - radius), radius: corner)
-      ..lineTo(rect.left, rect.top + radius)
-      ..arcToPoint(Offset(rect.left + radius, rect.top), radius: corner)
+      ..lineTo(rect.left, rect.top + top)
+      ..arcToPoint(Offset(rect.left + top, rect.top), radius: topCorner)
       ..close();
   }
 
@@ -148,14 +165,18 @@ class GlassBorder extends ShapeBorder {
   void paint(Canvas canvas, Rect rect, {TextDirection? textDirection}) {}
 
   @override
-  ShapeBorder scale(double t) => GlassBorder(radius: radius * t, cut: cut * t);
+  ShapeBorder scale(double t) =>
+      GlassBorder(radius: radius * t, cut: cut * t, flatTop: flatTop);
 
   @override
   bool operator ==(Object other) =>
-      other is GlassBorder && other.radius == radius && other.cut == cut;
+      other is GlassBorder &&
+      other.radius == radius &&
+      other.cut == cut &&
+      other.flatTop == flatTop;
 
   @override
-  int get hashCode => Object.hash(radius, cut);
+  int get hashCode => Object.hash(radius, cut, flatTop);
 }
 
 class _GlassPainter extends CustomPainter {

@@ -31,7 +31,7 @@ constexpr COLORREF kBorderColor = RGB(0x1b, 0x2a, 0x4a);
 /// The app draws its own title bar across the top of the client area. These
 /// are its height and the width of the buttons at its right-hand end, in
 /// logical pixels, and must match TitleBar in lib/src/ui/title_bar.dart.
-constexpr int kTitleBarHeight = 32;
+constexpr int kTitleBarHeight = 52;
 constexpr int kWindowButtonsWidth = 138;
 
 /// How much of the top edge resizes the window rather than belonging to the
@@ -41,6 +41,12 @@ constexpr int kResizeCorner = 16;
 
 /// The Flutter view's own window procedure, which ContentProc stands in for.
 static WNDPROC g_content_proc = nullptr;
+
+/// What in the title bar is clicked rather than dragged, as the app last
+/// reported it: left, top, right and bottom of each, in logical pixels. Until
+/// it has, that is taken to be the buttons alone.
+static std::vector<double> g_title_bar_controls;
+static bool g_title_bar_controls_known = false;
 
 // The number of Win32Window objects that currently exist.
 static int g_active_window_count = 0;
@@ -89,11 +95,24 @@ LRESULT HitTestFrame(HWND window, LPARAM lparam) {
     }
     return HTTOP;
   }
-  if (point.y < Scale(kTitleBarHeight, scale_factor) &&
-      point.x < client.right - Scale(kWindowButtonsWidth, scale_factor)) {
-    return HTCAPTION;
+  if (point.y >= Scale(kTitleBarHeight, scale_factor)) {
+    return HTCLIENT;
   }
-  return HTCLIENT;
+  if (!g_title_bar_controls_known) {
+    return point.x < client.right - Scale(kWindowButtonsWidth, scale_factor)
+               ? HTCAPTION
+               : HTCLIENT;
+  }
+  double x = point.x / scale_factor;
+  double y = point.y / scale_factor;
+  const std::vector<double>& edges = g_title_bar_controls;
+  for (size_t i = 0; i + 3 < edges.size(); i += 4) {
+    if (x >= edges[i] && y >= edges[i + 1] && x < edges[i + 2] &&
+        y < edges[i + 3]) {
+      return HTCLIENT;
+    }
+  }
+  return HTCAPTION;
 }
 
 // Window procedure for the Flutter view. The view covers the whole client
@@ -347,6 +366,11 @@ HWND Win32Window::GetHandle() {
 
 void Win32Window::SetQuitOnClose(bool quit_on_close) {
   quit_on_close_ = quit_on_close;
+}
+
+void Win32Window::SetTitleBarControls(const std::vector<double>& edges) {
+  g_title_bar_controls = edges;
+  g_title_bar_controls_known = true;
 }
 
 bool Win32Window::OnCreate() {

@@ -8,10 +8,18 @@ void main() {
   const channel = MethodChannel('port_why/window');
   late List<String> asked;
 
+  /// Where the frame last said its controls are: four edges for each.
+  late List<double> controls;
+
   Future<void> pumpFrame(WidgetTester tester, {Widget page = const SizedBox()}) async {
     asked = [];
+    controls = [];
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
-      asked.add(call.method);
+      if (call.method == 'setControls') {
+        controls = call.arguments as List<double>;
+      } else {
+        asked.add(call.method);
+      }
       return null;
     });
     addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null));
@@ -67,5 +75,28 @@ void main() {
     expect(padding.top, TitleBar.height);
     // The buttons sit over the page rather than pushing it down.
     expect(tester.getTopRight(find.bySemanticsLabel('Close')), tester.getTopRight(find.byType(MaterialApp)));
+  });
+
+  testWidgets('the runner is told what in the title bar is clicked, not dragged', (tester) async {
+    Widget page({required double left}) => Stack(
+      children: [
+        Positioned(left: left, top: 6, width: 200, height: 32, child: const TitleBarControl(child: SizedBox())),
+        // Below the title bar, so no business of the runner's.
+        const Positioned(left: 0, top: 100, width: 50, height: 50, child: TitleBarControl(child: SizedBox())),
+      ],
+    );
+
+    await pumpFrame(tester, page: page(left: 100));
+    final buttons = tester.getRect(find.byType(TitleBar));
+    expect(buttons.size, const Size(TitleBar.buttonsWidth, TitleBar.height));
+    expect(controls, [
+      100, 6, 300, 38,
+      buttons.left, buttons.top, buttons.right, buttons.bottom,
+    ]);
+
+    // It hears again when one moves.
+    await pumpFrame(tester, page: page(left: 140));
+    await tester.pump();
+    expect(controls.sublist(0, 4), [140, 6, 340, 38]);
   });
 }

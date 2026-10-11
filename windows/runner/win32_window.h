@@ -6,6 +6,7 @@
 #include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 // A class abstraction for a high DPI-aware Win32 Window. Intended to be
 // inherited from by classes that wish to specialize with custom
@@ -51,6 +52,11 @@ class Win32Window {
 
   // If true, closing this window will quit the application.
   void SetQuitOnClose(bool quit_on_close);
+
+  // Says which parts of the title bar the app draws are its own to click,
+  // rather than the window's to be dragged by: the left, top, right and
+  // bottom of each in turn, in logical pixels of the client area.
+  void SetTitleBarControls(const std::vector<double>& edges);
 
   // Return a RECT representing the bounds of the current client area.
   RECT GetClientArea();

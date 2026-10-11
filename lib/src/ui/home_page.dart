@@ -1,6 +1,7 @@
+import 'dart:async';
 import 'dart:io' show pid;
 import 'dart:math' as math;
-import 'dart:ui' show lerpDouble;
+import 'dart:ui' show PointerDeviceKind, lerpDouble;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +16,7 @@ import 'glass.dart';
 import 'kill_dialog.dart';
 import 'port_deck.dart';
 import 'theme.dart';
+import 'title_bar.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key, required this.repository, this.favorites});
@@ -159,9 +161,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
             fit: StackFit.expand,
             children: [
               const CyberBackdrop(),
-              // Clear of the title bar, which the backdrop runs on behind.
-              SafeArea(
-                bottom: false,
+              // Right to the top of the window: the control panel is its
+              // title bar.
+              Positioned.fill(
                 child: ListenableBuilder(
                   listenable: _controller,
                   builder: (context, _) => Stack(
@@ -214,8 +216,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   }
 }
 
-/// The pane everything is steered from: what the app is, the filters, and
-/// the sort order. It floats over the deck, which scrolls underneath it.
+/// What everything is steered from, in two panes the deck scrolls beneath.
+/// The first hangs from the top of the window as its title bar: what the app
+/// is, the search and the switches, beside the window's own buttons. The
+/// second floats under it: the favorites, the sort order and the scope.
 class _ControlPanel extends StatelessWidget {
   const _ControlPanel({
     required this.controller,
@@ -237,13 +241,22 @@ class _ControlPanel extends StatelessWidget {
   final VoidCallback onRescan;
   final ValueChanged<int> onShowPort;
 
-  /// Narrower than this and the search no longer fits beside the title.
-  /// The width is for text at its normal size, and grows with it.
-  static const _oneRow = 1140.0;
+  /// Narrower than these and the brand gives its room to the search: first
+  /// the count under the name goes, then the name. The widths are for text
+  /// at its normal size, and grow with it.
+  static const _withCounts = 1000.0;
+  static const _withName = 860.0;
+
+  /// The search stops growing here, so that a wide window keeps some bare
+  /// title bar to be dragged by.
+  static const _widestSearch = 640.0;
+
+  /// Narrower than this and the scope switch goes on a line of its own,
+  /// under the sort order and the favorites.
+  static const _oneRow = 940.0;
 
   @override
   Widget build(BuildContext context) {
-    final brand = _Brand(controller: controller);
     final field = _SearchField(
       controller: search,
       focusNode: searchFocus,
@@ -277,6 +290,8 @@ class _ControlPanel extends StatelessWidget {
     final rescan = IconButton(
       tooltip: 'Rescan everything (F5)',
       color: Neon.cyan,
+      padding: EdgeInsets.zero,
+      constraints: const BoxConstraints.tightFor(width: 34, height: 34),
       icon: RotationTransition(
         turns: CurveTween(curve: Curves.easeOutCubic).animate(spin),
         child: const Icon(Icons.refresh_rounded),
@@ -288,105 +303,147 @@ class _ControlPanel extends StatelessWidget {
       child: child,
     );
 
-    final panel = LayoutBuilder(
+    final bar = LayoutBuilder(
       builder: (context, constraints) {
         final width =
             constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1);
+        return SizedBox(
+          height: TitleBar.height,
+          child: Padding(
+            padding: const EdgeInsets.only(
+              left: PortDeck.margin,
+              right: TitleBar.buttonsWidth + 6,
+            ),
+            child: Row(
+              children: [
+                _Brand(
+                  controller: controller,
+                  showsName: width >= _withName,
+                  showsCounts: width >= _withCounts,
+                ),
+                const SizedBox(width: 18),
+                Expanded(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxWidth: _widestSearch,
+                      ),
+                      child: TitleBarControl(child: field),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                TitleBarControl(child: udp),
+                const SizedBox(width: 8),
+                TitleBarControl(child: live),
+                const SizedBox(width: 2),
+                TitleBarControl(child: rescan),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    // The sort order and the favorites share a line, which slides sideways
+    // when the sort order opens out or there are many favorites.
+    final watch = sideways(
+      Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _SortBar(controller: controller),
+          Container(
+            width: 1,
+            height: 16,
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+            color: Colors.white.withValues(alpha: 0.12),
+          ),
+          _FavoritesBar(controller: controller, onShowPort: onShowPort),
+        ],
+      ),
+    );
+    final filters = LayoutBuilder(
+      builder: (context, constraints) {
+        final width =
+            constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1);
+        if (width >= _oneRow) {
+          return Row(
+            children: [
+              Expanded(child: watch),
+              const SizedBox(width: 12),
+              scope,
+            ],
+          );
+        }
         return Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            if (width >= _oneRow)
-              Row(
-                children: [
-                  brand,
-                  const SizedBox(width: 22),
-                  Expanded(child: field),
-                  const SizedBox(width: 10),
-                  udp,
-                  const SizedBox(width: 16),
-                  live,
-                  const SizedBox(width: 2),
-                  rescan,
-                ],
-              )
-            else ...[
-              Row(
-                children: [
-                  Expanded(child: brand),
-                  live,
-                  const SizedBox(width: 2),
-                  rescan,
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(child: field),
-                  const SizedBox(width: 10),
-                  udp,
-                ],
-              ),
-            ],
-            const SizedBox(height: 10),
-            sideways(
-              _FavoritesBar(controller: controller, onShowPort: onShowPort),
-            ),
-            const SizedBox(height: 4),
-            // The sort order on the left and the scope switch on the right,
-            // or one above the other once they no longer fit side by side.
-            SizedBox(
-              width: double.infinity,
-              child: Wrap(
-                alignment: WrapAlignment.spaceBetween,
-                crossAxisAlignment: WrapCrossAlignment.center,
-                spacing: 12,
-                runSpacing: 8,
-                children: [
-                  sideways(_SortBar(controller: controller)),
-                  sideways(scope),
-                ],
-              ),
+            SizedBox(width: double.infinity, child: watch),
+            Padding(
+              padding: const EdgeInsets.only(left: 14, bottom: 7),
+              child: sideways(scope),
             ),
           ],
         );
       },
     );
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        PortDeck.margin,
-        PortDeck.margin,
-        PortDeck.margin,
-        0,
-      ),
-      child: AnimatedBuilder(
-        animation: boot,
-        builder: (context, content) {
-          final formed = Curves.easeOutCubic.transform(boot.value);
-          return Transform.translate(
-            offset: Offset(0, -18 * (1 - formed)),
-            child: Glass(
-              radius: 20,
-              cut: 20,
-              blur: 26,
-              tint: 0.52,
-              strength: formed,
-              padding: const EdgeInsets.fromLTRB(16, 14, 14, 8),
-              child: content!,
-            ),
-          );
-        },
-        child: FadeTransition(opacity: boot, child: panel),
-      ),
+    return AnimatedBuilder(
+      animation: boot,
+      builder: (context, _) {
+        final formed = Curves.easeOutCubic.transform(boot.value);
+        return Transform.translate(
+          offset: Offset(0, -18 * (1 - formed)),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Glass(
+                radius: 14,
+                cut: 14,
+                flatTop: true,
+                blur: 26,
+                tint: 0.52,
+                strength: formed,
+                child: FadeTransition(opacity: boot, child: bar),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(
+                  PortDeck.margin,
+                  10,
+                  PortDeck.margin,
+                  0,
+                ),
+                child: Glass(
+                  radius: 18,
+                  cut: 18,
+                  blur: 26,
+                  tint: 0.52,
+                  strength: formed,
+                  padding: const EdgeInsets.only(right: 8),
+                  child: FadeTransition(opacity: boot, child: filters),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
 
+/// The app's mark and name, and under the name how much is open. It is the
+/// title bar's handle: nothing in it is clicked.
 class _Brand extends StatelessWidget {
-  const _Brand({required this.controller});
+  const _Brand({
+    required this.controller,
+    required this.showsName,
+    required this.showsCounts,
+  });
 
   final PortsController controller;
+  final bool showsName;
+  final bool showsCounts;
 
   @override
   Widget build(BuildContext context) {
@@ -397,11 +454,11 @@ class _Brand extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Container(
-          width: 40,
-          height: 40,
+          width: 30,
+          height: 30,
           padding: const EdgeInsets.all(1.5),
           decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(11),
+            borderRadius: BorderRadius.circular(9),
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
@@ -410,12 +467,12 @@ class _Brand extends StatelessWidget {
             boxShadow: [
               BoxShadow(
                 color: Neon.cyan.withValues(alpha: 0.45),
-                blurRadius: 16,
+                blurRadius: 12,
                 offset: const Offset(-2, -2),
               ),
               BoxShadow(
                 color: Neon.pink.withValues(alpha: 0.35),
-                blurRadius: 16,
+                blurRadius: 12,
                 offset: const Offset(3, 3),
               ),
             ],
@@ -423,50 +480,50 @@ class _Brand extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: Neon.abyss.withValues(alpha: 0.84),
-              borderRadius: BorderRadius.circular(9.5),
+              borderRadius: BorderRadius.circular(7.5),
             ),
             child: Icon(
               Icons.lan_rounded,
               color: Neon.cyan,
-              size: 21,
+              size: 16,
               shadows: neonGlow(Neon.cyan),
             ),
           ),
         ),
-        const SizedBox(width: 13),
-        Flexible(
-          child: Column(
+        if (showsName) ...[
+          const SizedBox(width: 12),
+          Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               GlitchText(
                 'PORT WHY',
                 style: TextStyle(
-                  fontSize: 19,
+                  fontSize: 15,
                   fontWeight: FontWeight.w700,
-                  letterSpacing: 4.5,
+                  letterSpacing: 4,
                   height: 1.15,
                   color: Colors.white,
-                  shadows: neonGlow(Neon.cyan, spread: 14, alpha: 0.6),
+                  shadows: neonGlow(Neon.cyan, spread: 12, alpha: 0.6),
                 ),
               ),
-              const SizedBox(height: 2),
-              Text(
-                controller.isLoading
-                    ? 'Reading open ports…'
-                    : '${countOf(controller.entries.length, 'open port')} held by '
-                          '${countOf(processes, 'process', plural: 'processes')}',
-                maxLines: 1,
-                softWrap: false,
-                overflow: TextOverflow.fade,
-                style: mono.copyWith(
-                  fontSize: 11.5,
-                  color: scheme.onSurfaceVariant,
+              if (showsCounts)
+                Text(
+                  controller.isLoading
+                      ? 'Reading open ports…'
+                      : '${countOf(controller.entries.length, 'open port')} held by '
+                            '${countOf(processes, 'process', plural: 'processes')}',
+                  maxLines: 1,
+                  softWrap: false,
+                  style: mono.copyWith(
+                    fontSize: 10.5,
+                    height: 1.25,
+                    color: scheme.onSurfaceVariant,
+                  ),
                 ),
-              ),
             ],
           ),
-        ),
+        ],
       ],
     );
   }
@@ -521,7 +578,7 @@ class _SearchFieldState extends State<_SearchField> {
     final scheme = Theme.of(context).colorScheme;
     final dim = scheme.onSurfaceVariant;
     final isFocused = widget.focusNode.hasFocus;
-    const iconBox = BoxConstraints(minWidth: 40, minHeight: 36);
+    const iconBox = BoxConstraints(minWidth: 40, minHeight: 32);
 
     return AnimatedContainer(
       duration: const Duration(milliseconds: 180),
@@ -547,7 +604,7 @@ class _SearchFieldState extends State<_SearchField> {
         decoration: InputDecoration(
           isDense: true,
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+          contentPadding: const EdgeInsets.symmetric(vertical: 8),
           hintText: 'Filter by port, project, process, folder…  (Ctrl+F)',
           hintStyle: mono.copyWith(
             fontSize: 12.5,
@@ -800,8 +857,8 @@ class _Pill extends StatelessWidget {
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 220),
-          height: 36,
-          padding: const EdgeInsets.only(left: 8, right: 14),
+          height: 32,
+          padding: const EdgeInsets.only(left: 6, right: 13),
           decoration: well(
             radius: 18,
             edge: isLit ? color.withValues(alpha: 0.75) : null,
@@ -1072,12 +1129,19 @@ class _AddFavoriteState extends State<_AddFavorite> {
   }
 }
 
-/// What to order the deck by. Choosing the current order again reverses it.
-class _SortBar extends StatelessWidget {
+/// What to order the deck by. Only the current order shows until the pointer
+/// is over it, when the others slide out to be chosen from. Choosing the
+/// current order again reverses it.
+class _SortBar extends StatefulWidget {
   const _SortBar({required this.controller});
 
   final PortsController controller;
 
+  @override
+  State<_SortBar> createState() => _SortBarState();
+}
+
+class _SortBarState extends State<_SortBar> {
   static const _labels = {
     SortColumn.port: 'Port',
     SortColumn.project: 'Project',
@@ -1087,27 +1151,90 @@ class _SortBar extends StatelessWidget {
     SortColumn.opened: 'Opened',
   };
 
+  static const _sliding = Duration(milliseconds: 240);
+
+  /// How long the pointer may stray off the bar before it shuts, so that a
+  /// hand drifting on its way along the options does not lose them.
+  static const _grace = Duration(milliseconds: 450);
+
+  bool _isOpen = false;
+  Timer? _shutting;
+
+  @override
+  void dispose() {
+    _shutting?.cancel();
+    super.dispose();
+  }
+
+  void _open() {
+    _shutting?.cancel();
+    setState(() => _isOpen = true);
+  }
+
+  void _shutSoon() {
+    _shutting?.cancel();
+    _shutting = Timer(_grace, () => setState(() => _isOpen = false));
+  }
+
   @override
   Widget build(BuildContext context) {
+    final controller = widget.controller;
     final dim = Theme.of(context).colorScheme.onSurfaceVariant;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          'SORT',
-          style: caption.copyWith(color: dim.withValues(alpha: 0.6)),
+    return MouseRegion(
+      onEnter: (_) => _open(),
+      onExit: (_) => _shutSoon(),
+      // The padding is the pane's own, taken inside so that the whole depth
+      // of the pane counts as being over the bar.
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 12, 0, 12),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // For a finger, which cannot hover. A mouse is already over it.
+            GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTapUp: (details) {
+                if (details.kind == PointerDeviceKind.mouse) return;
+                setState(() => _isOpen = !_isOpen);
+              },
+              child: Padding(
+                padding: const EdgeInsets.only(top: 7, bottom: 7, right: 6),
+                child: Text(
+                  'SORT',
+                  style: caption.copyWith(color: dim.withValues(alpha: 0.6)),
+                ),
+              ),
+            ),
+            for (final MapEntry(key: column, value: label) in _labels.entries)
+              _slideOut(
+                isOut: _isOpen || controller.sortColumn == column,
+                child: _SortChip(
+                  label: label,
+                  isSorted: controller.sortColumn == column,
+                  ascending: controller.ascending,
+                  onTap: () => controller.sortBy(column),
+                ),
+              ),
+          ],
         ),
-        const SizedBox(width: 6),
-        for (final MapEntry(key: column, value: label) in _labels.entries)
-          _SortChip(
-            label: label,
-            isSorted: controller.sortColumn == column,
-            ascending: controller.ascending,
-            onTap: () => controller.sortBy(column),
-          ),
-      ],
+      ),
     );
   }
+
+  /// [child] at its own width while [isOut], and shut to nothing otherwise.
+  Widget _slideOut({required bool isOut, required Widget child}) => ClipRect(
+    child: AnimatedAlign(
+      alignment: Alignment.centerLeft,
+      widthFactor: isOut ? 1 : 0,
+      duration: _sliding,
+      curve: Curves.easeOutCubic,
+      child: AnimatedOpacity(
+        opacity: isOut ? 1 : 0,
+        duration: _sliding,
+        child: ExcludeFocus(excluding: !isOut, child: child),
+      ),
+    ),
+  );
 }
 
 class _SortChip extends StatelessWidget {
