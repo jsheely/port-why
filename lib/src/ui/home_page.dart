@@ -178,7 +178,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           !_controller.isFavorite(entry.port),
                         ),
                         footerClearance: _StatusBar.height + 12,
-                        header: expFlags.contains('noheader') ? const SizedBox(height: 120) : _ControlPanel( // EXPERIMENT
+                        header: _ControlPanel(
                           controller: _controller,
                           search: _search,
                           searchFocus: _searchFocus,
@@ -196,7 +196,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           },
                         ),
                       ),
-                      if (!expFlags.contains('nostatus')) Positioned( // EXPERIMENT
+                      Positioned(
                         left: PortDeck.margin,
                         right: PortDeck.margin,
                         bottom: 10,

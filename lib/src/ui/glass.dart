@@ -62,7 +62,6 @@ class Glass extends StatelessWidget {
   Widget build(BuildContext context) {
     final shape = GlassBorder(radius: radius, cut: cut);
     final pane = CustomPaint(
-      isComplex: expFlags.contains('complexhint'), // EXPERIMENT
       painter: _GlassPainter(
         accent: accent,
         shape: shape,
@@ -82,13 +81,13 @@ class Glass extends StatelessWidget {
     if (overBackdrop) {
       frosted = Stack(
         children: [
-          if (strength > 0 && !expFlags.contains('nofrostlayer')) // EXPERIMENT
+          if (strength > 0)
             Positioned.fill(child: Frost(shape: shape, opacity: strength)),
           pane,
         ],
       );
     } else {
-      final sigma = expFlags.contains('noblur') ? 0.0 : blur * strength; // EXPERIMENT
+      final sigma = blur * strength;
       frosted = ClipPath(
         clipper: ShapeBorderClipper(shape: shape),
         child: BackdropFilter(
@@ -125,7 +124,7 @@ class GlassBorder extends ShapeBorder {
   @override
   Path getOuterPath(Rect rect, {TextDirection? textDirection}) {
     final corner = Radius.circular(radius);
-    if (cut <= 0 || expFlags.contains('nocut')) { // EXPERIMENT
+    if (cut <= 0) {
       return Path()..addRRect(RRect.fromRectAndRadius(rect, corner));
     }
     return Path()
@@ -178,35 +177,34 @@ class _GlassPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (strength <= 0 || expFlags.contains('noglassfill')) return; // EXPERIMENT
+    if (strength <= 0) return;
     final rect = Offset.zero & size;
     Color white(double alpha) =>
         Colors.white.withValues(alpha: alpha * strength);
     Color tinted(double alpha) => accent.withValues(alpha: alpha * strength);
 
-    // EXPERIMENT (whole block)
-    canvas.save();
-    if (!expFlags.contains('g_noclip')) canvas.clipPath(shape.getOuterPath(rect));
-    if (!expFlags.contains('g_nosmoke')) {
-      canvas.drawRect(
-        rect,
+    // Each fill is poured over the whole clip with drawPaint, never drawn as
+    // a rectangle or circle. On Windows the renderer (Impeller) draws those
+    // shapes from a distance field, and gives one a gradient by rendering
+    // both off screen and blending them: three extra render passes a fill, on
+    // every pane, sixty times a second. Measured, that was most of a frame.
+    canvas
+      ..save()
+      ..clipPath(shape.getOuterPath(rect))
+      ..drawPaint(
         Paint()..color = Neon.smoke.withValues(alpha: tint * strength),
-      );
-    }
-    if (!expFlags.contains('g_nograd1')) {
-      canvas.drawRect(
-        rect,
+      )
+      // The body of the pane catches light from the top left...
+      ..drawPaint(
         Paint()
           ..shader = LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: [white(0.10), white(0.015)],
           ).createShader(rect),
-      );
-    }
-    if (!expFlags.contains('g_nograd2')) {
-      canvas.drawRect(
-        rect,
+      )
+      // ...and takes a little colour from whatever it is showing.
+      ..drawPaint(
         Paint()
           ..shader = LinearGradient(
             begin: Alignment.topLeft,
@@ -214,13 +212,11 @@ class _GlassPainter extends CustomPainter {
             colors: [tinted(0.07 + 0.10 * emphasis), tinted(0)],
           ).createShader(rect),
       );
-    }
 
     if (pointer?.value case final at?) {
       final reach = math.max(size.shortestSide * 1.5, 190.0);
-      canvas.drawCircle(
-        at,
-        reach,
+      // The gradient ends clear, so beyond its reach this paints nothing.
+      canvas.drawPaint(
         Paint()
           ..shader = RadialGradient(
             colors: [
@@ -235,7 +231,7 @@ class _GlassPainter extends CustomPainter {
 
     // Inset so the whole stroke falls inside the outline.
     final rim = shape.getOuterPath(rect.deflate(0.6));
-    if (!expFlags.contains('norim')) canvas.drawPath( // EXPERIMENT
+    canvas.drawPath(
       rim,
       Paint()
         ..style = PaintingStyle.stroke

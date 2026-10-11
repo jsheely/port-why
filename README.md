@@ -4,12 +4,13 @@ A Windows desktop app (Flutter) that lists every open port on your machine and
 answers "what is holding that open?": the process, the framework or runtime
 behind it, the project it belongs to, and the folder it is running in.
 
-- Ports are listed highest first; click any column header to sort by it.
+- Each port is a card, as many abreast as the window has room for, highest
+  port first; pick another order from the sort bar, and again to reverse it.
 - Filter by typing (port, project, process, folder, command line; every word
   must match), by scope (Projects / Apps / System), and optionally include UDP.
-- Each row can open its folder in Explorer or kill the owning process.
-- Click a row for the full command line, executable, parent process and bind
-  addresses.
+- Each card can open its folder in Explorer or kill the owning process.
+- Click a card for the full command line, executable, parent process and bind
+  addresses, which open in a pane under its row.
 
 ## Run
 
@@ -54,7 +55,7 @@ ports the app asks each running WSL distribution what is really listening
 - a process in WSL is shown with its own name, pid, command line and folder
   (as a `\\wsl.localhost\...` path Explorer can open);
 - a Docker container is shown by name, with its image and, for Compose, the
-  project name and folder. Its row stops the container rather than killing a
+  project name and folder. Its card stops the container rather than killing a
   process.
 
 This only happens when a relayed port appears or changes, so ordinary polling
@@ -66,10 +67,10 @@ started.
 - Windows only. The scanner sits behind `PortRepository`, so another platform
   needs its own implementation of that interface.
 - Without administrator rights, Windows hides the folder and command line of
-  system and other users' processes, and refuses to kill them. Those rows say
+  system and other users' processes, and refuses to kill them. Those cards say
   so; run Port Why as administrator to see and act on them.
 - Project and framework names are inferred, so they can be wrong for unusual
-  setups. The expanded row shows the evidence (command line and folder).
+  setups. A card's details show the evidence (command line and folder).
 - Tracing into WSL needs `ss` in the distribution (and `docker` for
   containers). Docker Desktop containers are only named when a running
   distribution has Docker's WSL integration enabled; otherwise their ports

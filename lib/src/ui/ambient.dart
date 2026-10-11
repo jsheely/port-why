@@ -1,9 +1,9 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' show ClipOp;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 
 import 'theme.dart';
 
@@ -11,8 +11,8 @@ import 'theme.dart';
 /// live pulse, the title's glitch.
 ///
 /// It is one clock so that all of it stops together, which it does while the
-/// window is in the background (every frame costs a blur per pane of glass,
-/// and nobody is watching) and when the system asks for reduced motion.
+/// window is in the background (every frame redraws the whole window, and
+/// nobody is watching) and when the system asks for reduced motion.
 class AmbientClock extends ChangeNotifier implements ValueListenable<double> {
   AmbientClock._();
 
@@ -54,14 +54,16 @@ class Ambient extends StatefulWidget {
   State<Ambient> createState() => _AmbientState();
 }
 
-class _AmbientState extends State<Ambient> with SingleTickerProviderStateMixin {
+class _AmbientState extends State<Ambient> {
   final _clock = AmbientClock._();
-  late final Ticker _ticker = createTicker(_tick);
   late final AppLifecycleListener _lifecycle;
 
-  /// Time from before the ticker last stopped: a ticker counts from zero
-  /// every time it starts.
-  double _banked = 0;
+  /// What moves the clock on. A timer and not a ticker, because a ticker asks
+  /// for a frame at the display's full rate, and with no raster cache in the
+  /// renderer every frame redraws the whole window. Drifting lights look the
+  /// same at half that, for half the work.
+  Timer? _timer;
+  static const _step = Duration(milliseconds: 33);
   bool _foreground = true;
 
   @override
@@ -69,10 +71,8 @@ class _AmbientState extends State<Ambient> with SingleTickerProviderStateMixin {
     super.initState();
     final state = WidgetsBinding.instance.lifecycleState;
     _foreground = state == null || state == AppLifecycleState.resumed;
-    expLog('initial lifecycle $state'); // EXPERIMENT
     _lifecycle = AppLifecycleListener(
       onStateChange: (state) {
-        expLog('lifecycle $state'); // EXPERIMENT
         _foreground = state == AppLifecycleState.resumed;
         _sync();
       },
@@ -86,32 +86,27 @@ class _AmbientState extends State<Ambient> with SingleTickerProviderStateMixin {
   }
 
   void _sync() {
-    var run = _foreground && Ambient.allowsMotion(context);
-    if (expFlags.contains('forceclock')) run = true; // EXPERIMENT
-    if (expFlags.contains('noclock')) run = false; // EXPERIMENT
-    if (run == _ticker.isActive) return;
+    final run = _foreground && Ambient.allowsMotion(context);
+    if (run == (_timer != null)) return;
     if (run) {
-      _ticker.start();
+      _timer = Timer.periodic(_step, (_) => _tick());
     } else {
-      _ticker.stop();
-      _banked = _clock.value;
+      _timer?.cancel();
+      _timer = null;
     }
     _clock._setRunning(run);
   }
 
-  int _frames = 0; // EXPERIMENT
-  int _second = 0; // EXPERIMENT
-  void _tick(Duration elapsed) {
-    _frames++;
-    if (elapsed.inSeconds != _second) { expLog('fps $_frames'); _frames = 0; _second = elapsed.inSeconds; }
-    _clock._advanceTo(
-    _banked + elapsed.inMicroseconds / Duration.microsecondsPerSecond,
-  );}
+  // Counted in steps rather than read off a stopwatch: if the app is too busy
+  // to keep up, ambient time simply runs a little slow.
+  void _tick() => _clock._advanceTo(
+    _clock.value + _step.inMicroseconds / Duration.microsecondsPerSecond,
+  );
 
   @override
   void dispose() {
     _lifecycle.dispose();
-    _ticker.dispose();
+    _timer?.cancel();
     _clock.dispose();
     super.dispose();
   }
@@ -145,13 +140,15 @@ class CyberBackdrop extends StatelessWidget {
 }
 
 class _BackdropPainter extends CustomPainter {
-  _BackdropPainter(this.clock) : super(repaint: expFlags.contains('staticbackdrop') ? null : clock); // EXPERIMENT
+  _BackdropPainter(this.clock) : super(repaint: clock);
 
   final AmbientClock clock;
 
   @override
-  void paint(Canvas canvas, Size size) =>
-      _Scene.at(size, clock).paint(canvas, frosted: false);
+  void paint(Canvas canvas, Size size) {
+    canvas.clipRect(Offset.zero & size);
+    _Scene.at(size, clock).paint(canvas, frosted: false);
+  }
 
   @override
   bool shouldRepaint(_BackdropPainter old) => old.clock != clock;
@@ -195,7 +192,7 @@ class _FrostPainter extends CustomPainter {
     required this.pane,
     required this.shape,
     required this.opacity,
-  }) : super(repaint: Listenable.merge([if (!expFlags.contains('staticfrost')) clock, scroll])); // EXPERIMENT
+  }) : super(repaint: Listenable.merge([clock, scroll]));
 
   final AmbientClock clock;
 
@@ -284,11 +281,9 @@ class _Scene {
       );
       final radius =
           size.longestSide * orb.radius * (1 + 0.1 * math.sin(angle * 2.3));
-      _lights.add((
-        centre,
-        radius,
+      _lights.add(
         Paint()
-          ..blendMode = expFlags.contains('noplus') ? BlendMode.srcOver : BlendMode.plus // EXPERIMENT
+          ..blendMode = BlendMode.plus
           ..shader = RadialGradient(
             colors: [
               orb.color.withValues(alpha: orb.alpha),
@@ -297,7 +292,7 @@ class _Scene {
             ],
             stops: const [0, 0.45, 1],
           ).createShader(Rect.fromCircle(center: centre, radius: radius)),
-      ));
+      );
     }
 
     final sweep = (seconds % _beamEvery) / _beamCrossing;
@@ -309,7 +304,7 @@ class _Scene {
         _beamDepth,
       );
       Paint lit(double edge) => Paint()
-        ..blendMode = expFlags.contains('noplus') ? BlendMode.srcOver : BlendMode.plus // EXPERIMENT
+        ..blendMode = BlendMode.plus
         ..shader = LinearGradient(
           begin: Alignment.topCenter,
           end: Alignment.bottomCenter,
@@ -320,7 +315,7 @@ class _Scene {
           ],
           stops: [0, edge, 1],
         ).createShader(beam);
-      _beam = beam;
+      _hasBeam = true;
       // The light trails behind a hard leading edge, which frost softens.
       _beamSharp = lit(0.94);
       _beamSoft = lit(0.78);
@@ -369,8 +364,8 @@ class _Scene {
   final bool isRunning;
 
   late final Paint _sky;
-  final _lights = <(Offset, double, Paint)>[];
-  Rect? _beam;
+  final _lights = <Paint>[];
+  bool _hasBeam = false;
   late final Paint _beamSharp;
   late final Paint _beamSoft;
   late final Paint _scanlines;
@@ -427,15 +422,19 @@ class _Scene {
 
   static const _scanlineDepth = 0.22;
 
-  /// Paints the scene over a window-sized area at the canvas's origin. With
-  /// [frosted], as seen through glass: the lights, with the fine lines blurred
-  /// away.
+  /// Paints the scene, laid out for a window at the canvas's origin, over
+  /// whatever the canvas is clipped to. With [frosted], as seen through glass:
+  /// the lights, with the fine lines blurred away.
+  ///
+  /// Everything is poured over the clip with drawPaint, each gradient fading
+  /// to nothing where its shape would have ended, rather than drawn as a
+  /// rectangle or circle. On Windows the renderer gives those shapes a
+  /// gradient by way of three extra render passes each, which adds up fast
+  /// when every frosted pane paints this on every frame.
   void paint(Canvas canvas, {required bool frosted}) {
-    final rect = Offset.zero & size;
-    canvas.drawRect(rect, _sky);
-    if (expFlags.contains('nobackdrop')) return; // EXPERIMENT
-    for (final (centre, radius, light) in _lights) {
-      canvas.drawCircle(centre, radius, light);
+    canvas.drawPaint(_sky);
+    for (final light in _lights) {
+      canvas.drawPaint(light);
     }
 
     if (!frosted) {
@@ -448,19 +447,16 @@ class _Scene {
         canvas.drawLine(Offset(0, y), Offset(size.width, y), line);
       }
     }
-    if (_beam case final beam?) {
-      canvas.drawRect(beam, frosted ? _beamSoft : _beamSharp);
-    }
+    if (_hasBeam) canvas.drawPaint(frosted ? _beamSoft : _beamSharp);
     if (frosted) {
       // Scanlines blur to an even dimming: a third of the rows, spread out.
-      canvas.drawRect(
-        rect,
+      canvas.drawPaint(
         Paint()..color = Colors.black.withValues(alpha: _scanlineDepth / 3),
       );
     } else {
-      canvas.drawRect(rect, _scanlines);
+      canvas.drawPaint(_scanlines);
     }
-    canvas.drawRect(rect, _vignette);
+    canvas.drawPaint(_vignette);
   }
 }
 
@@ -539,7 +535,7 @@ class _GlitchTextState extends State<GlitchText> {
 
 class _GlitchPainter extends CustomPainter {
   _GlitchPainter(this.clock, this.steady, this.cold, this.hot)
-    : super(repaint: expFlags.contains('nopulse') ? null : clock); // EXPERIMENT
+    : super(repaint: clock);
 
   final AmbientClock clock;
   final TextPainter steady;
@@ -629,7 +625,7 @@ class PulseDot extends StatelessWidget {
 
 class _PulsePainter extends CustomPainter {
   _PulsePainter(this.clock, this.color, this.active, this.pulses)
-    : super(repaint: expFlags.contains('nopulse') ? null : clock); // EXPERIMENT
+    : super(repaint: clock);
 
   final AmbientClock clock;
   final Color color;

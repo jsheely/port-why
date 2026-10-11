@@ -148,7 +148,7 @@ class _PortDeckState extends State<PortDeck> {
 
   @override
   Widget build(BuildContext context) {
-    final entries = expFlags.contains('nocards') ? const <PortEntry>[] : widget.controller.visible; // EXPERIMENT
+    final entries = widget.controller.visible;
     final now = DateTime.now();
     _allowsMotion = Ambient.allowsMotion(context);
 

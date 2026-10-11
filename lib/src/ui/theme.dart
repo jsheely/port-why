@@ -1,5 +1,3 @@
-import 'dart:io'; // EXPERIMENT
-
 import 'package:flutter/material.dart';
 
 import '../models.dart';
@@ -48,13 +46,7 @@ const caption = TextStyle(
 );
 
 /// A neon tube: the colour itself, and the light it throws.
-final expFlags = (Platform.environment['PW_EXP'] ?? '').split(',').toSet(); // EXPERIMENT
-void expLog(String line) { // EXPERIMENT
-  final path = Platform.environment['PW_LOG'];
-  if (path != null) File(path).writeAsStringSync('$line\n', mode: FileMode.append);
-}
-
-List<Shadow> neonGlow(Color color, {double spread = 10, double alpha = 0.7}) => expFlags.contains('noglow') ? const [] : [
+List<Shadow> neonGlow(Color color, {double spread = 10, double alpha = 0.7}) => [
   Shadow(color: color.withValues(alpha: alpha), blurRadius: spread),
 ];
 

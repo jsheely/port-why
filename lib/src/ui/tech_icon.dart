@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:simple_icons/simple_icons.dart';
 
 import '../models.dart';
-import 'theme.dart'; // EXPERIMENT
 
 /// A glyph and its brand colour. A null colour means "use the text colour".
 class TechGlyph {
@@ -28,7 +27,6 @@ class TechIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (expFlags.contains('notile')) return SizedBox.square(dimension: size); // EXPERIMENT
     final scheme = Theme.of(context).colorScheme;
     final glyph = techGlyphs[tech.icon] ?? _fallback(category);
     final color = legibleBrandColor(glyph.color, scheme);
@@ -40,7 +38,7 @@ class TechIcon extends StatelessWidget {
         color: color.withValues(alpha: tileTint),
         borderRadius: BorderRadius.circular(size * 0.25),
         border: Border.all(color: color.withValues(alpha: 0.42)),
-        boxShadow: expFlags.contains('noshadow') ? null : [ // EXPERIMENT
+        boxShadow: [
           // Outside the tile only: light under it would wash out the glyph.
           BoxShadow(
             color: color.withValues(alpha: 0.3),
