@@ -72,18 +72,24 @@ class _HomePageState extends State<HomePage> {
 
     final result = await _controller.kill(entry);
     if (!mounted) return;
-    final who = '${entry.process.name} (PID ${entry.process.pid})';
+    final container = entry.process.container;
+    final who = container == null
+        ? '${entry.process.name} (PID ${entry.process.pid})'
+        : 'container ${container.name}';
+    final (did, verb) = container == null
+        ? ('Killed', 'kill')
+        : ('Stopped', 'stop');
     final stillOpen = _controller.entries.any(
       (other) => other.port == entry.port && other.protocol == entry.protocol,
     );
     _say(switch (result) {
       KillResult.killed when stillOpen =>
-        'Killed $who, but something is still holding port ${entry.port}.',
-      KillResult.killed => 'Killed $who. Port ${entry.port} is free.',
+        '$did $who, but something is still holding port ${entry.port}.',
+      KillResult.killed => '$did $who. Port ${entry.port} is free.',
       KillResult.notFound => '$who had already exited.',
       KillResult.accessDenied =>
         'Windows refused to end $who. Run Port Why as administrator to kill it.',
-      KillResult.failed => 'Could not kill $who.',
+      KillResult.failed => 'Could not $verb $who.',
     });
   }
 

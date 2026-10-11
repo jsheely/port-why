@@ -678,6 +678,15 @@ const _programs = <String, (String, String?)>{
   'mongos': ('MongoDB', 'mongodb'),
   'redis-server': ('Redis', 'redis'),
   'memurai': ('Memurai (Redis)', 'redis'),
+  // Container image names, which differ from the server binaries above.
+  'redis': ('Redis', 'redis'),
+  'mysql': ('MySQL', 'mysql'),
+  'mariadb': ('MariaDB', 'mariadb'),
+  'mongo': ('MongoDB', 'mongodb'),
+  'clickhouse-server': ('ClickHouse', 'clickhouse'),
+  'rabbitmq': ('RabbitMQ', 'rabbitmq'),
+  'elasticsearch': ('Elasticsearch', 'elasticsearch'),
+  'kafka': ('Kafka', 'apachekafka'),
   'sqlservr': ('SQL Server', 'database'),
   'sqlbrowser': ('SQL Server Browser', 'database'),
   'influxd': ('InfluxDB', 'influxdb'),
@@ -781,4 +790,5 @@ final _programFamilies = <(RegExp, String, String)>[
   (RegExp(r'^teamviewer'), 'TeamViewer', 'teamviewer'),
   (RegExp(r'^tailscale'), 'Tailscale', 'tailscale'),
   (RegExp(r'^docker'), 'Docker', 'docker'),
+  (RegExp(r'^caddy'), 'Caddy', 'caddy'),
 ];

@@ -41,17 +41,36 @@ class ProcessDetails {
     this.parentCommandLine,
     this.services = const [],
     this.restricted = false,
+    this.distro,
+    this.hostCwd,
+    this.container,
   });
 
+  /// The process id, in its own pid namespace: a Linux pid when [distro] is
+  /// set. Zero when a container is known to own the port but its process is
+  /// not visible to us.
   final int pid;
 
   /// Image name, e.g. `node.exe`.
   final String name;
+
+  /// Executable, command line and working directory as the process itself
+  /// sees them. For a process in WSL these are Linux paths.
   final String? exePath;
   final String? commandLine;
 
   /// The process's current working directory.
   final String? cwd;
+
+  /// The WSL distribution the process runs in, or null for a Windows process.
+  final String? distro;
+
+  /// [cwd] as a path Windows can open (`\\wsl.localhost\Ubuntu\home\me\app`).
+  /// Null when it has no such path, as inside a container's own filesystem.
+  final String? hostCwd;
+
+  /// The container the process belongs to, if any.
+  final ContainerInfo? container;
 
   /// Opaque OS creation stamp. Together with [pid] it identifies one process
   /// instance, which guards against acting on a recycled pid.
@@ -69,7 +88,30 @@ class ProcessDetails {
   /// another user or to the system and we are not elevated).
   final bool restricted;
 
+  bool get isInWsl => distro != null;
+
   String? get exeDirectory => exePath == null ? null : p.windows.dirname(exePath!);
+}
+
+/// A container that owns a port, as reported by the Docker engine.
+class ContainerInfo {
+  const ContainerInfo({
+    required this.id,
+    required this.name,
+    required this.image,
+    this.composeProject,
+    this.directory,
+  });
+
+  final String id;
+  final String name;
+  final String image;
+
+  /// The Docker Compose project the container was started as part of.
+  final String? composeProject;
+
+  /// The Compose project's folder, as a path Windows can open.
+  final String? directory;
 }
 
 /// The project a process appears to belong to.
@@ -93,6 +135,9 @@ class ProjectInfo {
   bool get isDeclared => marker != folderMarker;
 
   static const folderMarker = 'folder';
+
+  /// The project is a Docker Compose project, named by the container's labels.
+  static const composeMarker = 'docker compose';
 }
 
 /// What opened the port: the framework if we can tell, else the runtime or
@@ -145,14 +190,30 @@ class PortEntry {
   final ProjectInfo? project;
   final PortCategory category;
 
-  String get id => '${protocol.name}:$port:${process.pid}';
+  String get id => '${protocol.name}:$port:$ownerKey';
 
-  /// The folder the process is running in, falling back to the project root
-  /// and then to where the executable lives.
-  String? get folder => process.cwd ?? project?.root ?? process.exeDirectory;
+  /// Identifies what would be stopped by killing this row: a container, a
+  /// process inside a WSL distribution, or a Windows process.
+  String get ownerKey {
+    final container = process.container;
+    if (container != null) return 'container:${container.id}';
+    final distro = process.distro;
+    return distro == null ? '${process.pid}' : 'wsl:$distro:${process.pid}';
+  }
+
+  /// A folder Windows can open: where the process is running, falling back to
+  /// the project root and then to where the executable lives.
+  String? get folder {
+    final candidate = process.isInWsl
+        // Linux paths mean nothing to Explorer; only the translated ones do.
+        ? process.hostCwd ?? project?.root
+        : process.cwd ?? project?.root ?? process.exeDirectory;
+    return candidate == null || candidate.isEmpty ? null : candidate;
+  }
 
   /// True when [folder] is only the executable's location.
-  bool get folderIsExeDirectory => process.cwd == null && project == null;
+  bool get folderIsExeDirectory =>
+      !process.isInWsl && process.cwd == null && project == null;
 
   /// True when every bound address is a loopback address.
   bool get isLocalOnly =>
@@ -176,8 +237,15 @@ class PortEntry {
     ?tech.runtime,
     ?project?.name,
     ?folder,
+    ?process.cwd,
     ?process.commandLine,
     ...process.services,
+    if (process.distro case final distro?) ...['wsl', distro],
+    if (process.container case final container?) ...[
+      'docker',
+      container.name,
+      container.image,
+    ],
   ].join('\n').toLowerCase();
 }
 

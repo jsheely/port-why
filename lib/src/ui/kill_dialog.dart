@@ -27,13 +27,26 @@ class _KillDialog extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final process = entry.process;
-    final project = entry.project;
+    final container = process.container;
+    final project = entry.project == null ? '' : ' (${entry.project!.name})';
     final otherPorts = {for (final other in alsoClosing) other.port}.toList()
       ..sort();
 
+    // What exactly is about to be stopped, and where it lives.
+    final target = switch ((container, process.distro)) {
+      (final container?, final distro) =>
+        'This stops the Docker container ${container.name}$project'
+            '${distro == null ? '' : ' in WSL ($distro)'}',
+      (null, final distro?) =>
+        'This ends process ${process.pid}$project in WSL ($distro)',
+      (null, null) => 'This ends process ${process.pid}$project',
+    };
+
     return AlertDialog(
       icon: Icon(Icons.stop_circle_outlined, color: scheme.error),
-      title: Text('Kill ${process.name}?'),
+      title: Text(
+        container == null ? 'Kill ${process.name}?' : 'Stop ${container.name}?',
+      ),
       content: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 440),
         child: Column(
@@ -41,9 +54,7 @@ class _KillDialog extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'This ends process ${process.pid}'
-              '${project == null ? '' : ' (${project.name})'}, '
-              'which is holding port ${entry.port} open. '
+              '$target, which is holding port ${entry.port} open. '
               'Anything it has not saved is lost.',
             ),
             if (otherPorts.isNotEmpty) ...[
@@ -95,7 +106,7 @@ class _KillDialog extends StatelessWidget {
             foregroundColor: scheme.onError,
           ),
           onPressed: () => Navigator.of(context).pop(true),
-          child: const Text('Kill process'),
+          child: Text(container == null ? 'Kill process' : 'Stop container'),
         ),
       ],
     );

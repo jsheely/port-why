@@ -198,6 +198,83 @@ void main() {
     expect(field.controller!.text, isEmpty);
   });
 
+  group('a port held by a Docker container in WSL', () {
+    const api = ContainerInfo(
+      id: 'a1b2c3d4e5f6',
+      name: 'e2b-api-1',
+      image: 'registry.example/e2b/api:v0.14',
+      composeProject: 'e2b',
+      directory: r'\\wsl.localhost\dev\opt\e2b',
+    );
+
+    setUp(() {
+      repository.entries = [
+        ...sample(),
+        PortEntry(
+          protocol: Protocol.tcp,
+          port: 3000,
+          addresses: const ['::1'],
+          process: const ProcessDetails(
+            pid: 1598,
+            name: 'api',
+            exePath: '/api',
+            cwd: '/',
+            commandLine: './api --port 3000',
+            distro: 'dev',
+            container: api,
+          ),
+          tech: const TechInfo(name: 'api', icon: 'docker'),
+          project: const ProjectInfo(
+            name: 'e2b',
+            root: r'\\wsl.localhost\dev\opt\e2b',
+            marker: ProjectInfo.composeMarker,
+          ),
+          category: PortCategory.project,
+        ),
+      ];
+    });
+
+    Finder action(IconData icon) => find.descendant(
+      of: find.byKey(const ValueKey('tcp:3000:container:a1b2c3d4e5f6')),
+      matching: find.byIcon(icon),
+    );
+
+    testWidgets('names the container, its project and its folder', (tester) async {
+      await pumpApp(tester);
+      expect(find.text('e2b-api-1 · Docker'), findsOneWidget);
+      expect(find.text('docker compose'), findsOneWidget);
+      // The Compose folder, leaf first, as Windows can open it.
+      expect(find.text(r'\\wsl.localhost\dev\opt'), findsOneWidget);
+
+      await tester.tap(find.text('3000'));
+      await tester.pump();
+      expect(find.textContaining('WSL distribution dev'), findsOneWidget);
+      expect(find.textContaining('Docker container e2b-api-1'), findsOneWidget);
+      expect(find.textContaining('Docker Compose project'), findsOneWidget);
+    });
+
+    testWidgets('opens the Compose folder', (tester) async {
+      await pumpApp(tester);
+      await tester.tap(action(Icons.folder_open_rounded));
+      await tester.pump();
+      expect(repository.openedFolders, [r'\\wsl.localhost\dev\opt\e2b']);
+    });
+
+    testWidgets('offers to stop the container rather than kill a process', (tester) async {
+      await pumpApp(tester);
+      await tester.tap(action(Icons.stop_circle_outlined));
+      await tester.pumpAndSettle();
+      expect(find.text('Stop e2b-api-1?'), findsOneWidget);
+      expect(find.textContaining('Docker container e2b-api-1 (e2b) in WSL (dev)'), findsOneWidget);
+
+      await tester.tap(find.text('Stop container'));
+      await tester.pumpAndSettle();
+      expect(repository.killed.single.process.container, api);
+      expect(find.textContaining('Stopped container e2b-api-1. Port 3000 is free.'), findsOneWidget);
+      expect(portsShown(tester), isNot(contains(3000)));
+    });
+  });
+
   testWidgets('UDP ports appear only when the chip is on', (tester) async {
     repository.entries = [...sample(), entry(port: 5353, protocol: Protocol.udp, pid: 4400, name: 'mdns.exe')];
     await pumpApp(tester);

@@ -19,6 +19,9 @@ PortEntry entry({
   DateTime? openedAt,
   PortCategory? category,
   bool restricted = false,
+  String? distro,
+  String? hostCwd,
+  ContainerInfo? container,
 }) => PortEntry(
   protocol: protocol,
   port: port,
@@ -31,6 +34,9 @@ PortEntry entry({
     commandLine: commandLine,
     startStamp: pid * 1000,
     restricted: restricted,
+    distro: distro,
+    hostCwd: hostCwd,
+    container: container,
   ),
   tech: TechInfo(name: tech, via: via, icon: icon),
   project: project == null
@@ -69,7 +75,7 @@ class FakePortRepository implements PortRepository {
     if (killResult == KillResult.killed) {
       entries = [
         for (final other in entries)
-          if (other.process.pid != entry.process.pid) other,
+          if (other.ownerKey != entry.ownerKey) other,
       ];
     }
     return killResult;

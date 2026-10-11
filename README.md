@@ -40,6 +40,23 @@ So a Vue app served by Vite shows as **Vue** (via Vite, on Node.js), and
 The rules live in `lib/src/detect/tech_detector.dart`; the icon for each one in
 `lib/src/ui/tech_icon.dart`.
 
+### WSL and Docker
+
+Windows attributes every port forwarded from WSL to one process,
+`wslrelay.exe`, and Docker Desktop's to `com.docker.backend.exe`. For those
+ports the app asks each running WSL distribution what is really listening
+(`ss` and `/proc`, as root) and which container publishes what (`docker ps`):
+
+- a process in WSL is shown with its own name, pid, command line and folder
+  (as a `\\wsl.localhost\...` path Explorer can open);
+- a Docker container is shown by name, with its image and, for Compose, the
+  project name and folder. Its row stops the container rather than killing a
+  process.
+
+This only happens when a relayed port appears or changes, so ordinary polling
+never starts a WSL command. A distribution that is not running is never
+started.
+
 ## Limits
 
 - Windows only. The scanner sits behind `PortRepository`, so another platform
@@ -49,3 +66,9 @@ The rules live in `lib/src/detect/tech_detector.dart`; the icon for each one in
   so; run Port Why as administrator to see and act on them.
 - Project and framework names are inferred, so they can be wrong for unusual
   setups. The expanded row shows the evidence (command line and folder).
+- Tracing into WSL needs `ss` in the distribution (and `docker` for
+  containers). Docker Desktop containers are only named when a running
+  distribution has Docker's WSL integration enabled; otherwise their ports
+  still show as Docker Desktop. A relayed port nothing can be found behind
+  stays labelled WSL and cannot be killed from here, since killing the relay
+  would cut off every WSL port.

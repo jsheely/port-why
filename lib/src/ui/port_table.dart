@@ -334,12 +334,7 @@ class _PortRow extends StatelessWidget {
                     Expanded(
                       child: _TwoLines(
                         top: _Clipped(entry.tech.name, style: text.bodyMedium),
-                        bottom: _Clipped(
-                          entry.tech.stack.isEmpty
-                              ? process.name
-                              : entry.tech.stack,
-                          style: faint,
-                        ),
+                        bottom: _Clipped(_techSubtitle(entry), style: faint),
                       ),
                     ),
                   ],
@@ -360,9 +355,18 @@ class _PortRow extends StatelessWidget {
                             : folder,
                         child: _FolderLabel(folder, nameStyle: text.bodyMedium, pathStyle: faint),
                       ),
-                pid: Text(
-                  '${process.pid}',
-                  style: text.bodySmall?.copyWith(fontFamily: monoFont, color: dim),
+                pid: Tooltip(
+                  message: process.isInWsl
+                      ? 'Process id inside WSL (${process.distro})'
+                      : 'Process id',
+                  child: Text(
+                    // Zero: a container whose process we cannot see.
+                    process.pid == 0 ? '—' : '${process.pid}',
+                    style: text.bodySmall?.copyWith(
+                      fontFamily: monoFont,
+                      color: dim,
+                    ),
+                  ),
                 ),
                 opened: entry.openedAt == null
                     ? Text('—', style: text.bodySmall?.copyWith(color: dim))
@@ -382,7 +386,11 @@ class _PortRow extends StatelessWidget {
                       onPressed: folder == null ? null : onOpenFolder,
                     ),
                     _RowAction(
-                      tooltip: killBlockedReason ?? 'Kill process',
+                      tooltip:
+                          killBlockedReason ??
+                          (process.container == null
+                              ? 'Kill process'
+                              : 'Stop container'),
                       icon: Icons.stop_circle_outlined,
                       color: scheme.error,
                       onPressed: killBlockedReason == null ? onKill : null,
@@ -397,6 +405,14 @@ class _PortRow extends StatelessWidget {
       ),
     );
   }
+}
+
+/// The line under the "opened by" name: what it runs on, and where.
+String _techSubtitle(PortEntry entry) {
+  final process = entry.process;
+  if (process.container case final container?) return '${container.name} · Docker';
+  final stack = entry.tech.stack.isEmpty ? process.name : entry.tech.stack;
+  return process.isInWsl ? '$stack · WSL' : stack;
 }
 
 /// An icon button with a fixed footprint, so two always fit the actions column
@@ -500,16 +516,28 @@ class _Details extends StatelessWidget {
                 ],
               ),
             ),
+          if (process.distro case final distro?)
+            _DetailLine(
+              'Runs in',
+              [
+                'WSL distribution $distro',
+                if (process.container case final container?)
+                  'Docker container ${container.name}  ·  image ${container.image}',
+              ].join('  ·  '),
+            ),
           _DetailLine('Command', process.commandLine, mono: true),
           _DetailLine('Executable', process.exePath, mono: true),
           _DetailLine('Working folder', process.cwd, mono: true),
           if (project != null)
-            _DetailLine(
-              'Project',
-              project.isDeclared
-                  ? '${project.name}  ·  found ${project.marker} in ${project.root}'
-                  : '${project.name}  ·  named after its folder, no manifest found',
-            ),
+            _DetailLine('Project', switch (project.marker) {
+              ProjectInfo.folderMarker =>
+                '${project.name}  ·  named after its folder, no manifest found',
+              ProjectInfo.composeMarker => [
+                '${project.name}  ·  Docker Compose project',
+                if (project.root.isNotEmpty) 'in ${project.root}',
+              ].join(' '),
+              _ => '${project.name}  ·  found ${project.marker} in ${project.root}',
+            }),
           _DetailLine(
             'Opened by',
             [tech.name, if (tech.stack.isNotEmpty) tech.stack].join('  ·  '),
@@ -522,14 +550,15 @@ class _Details extends StatelessWidget {
               if (entry.openedAt != null) 'since ${timestamp(entry.openedAt!)}',
             ].join('  ·  '),
           ),
-          _DetailLine(
-            'Process',
-            [
-              '${process.name}  ·  PID ${process.pid}',
-              if (process.startedAt != null)
-                'started ${timestamp(process.startedAt!)}',
-            ].join('  ·  '),
-          ),
+          if (process.pid != 0)
+            _DetailLine(
+              'Process',
+              [
+                '${process.name}  ·  PID ${process.pid}',
+                if (process.startedAt != null)
+                  'started ${timestamp(process.startedAt!)}',
+              ].join('  ·  '),
+            ),
           if (process.parentName != null)
             _DetailLine(
               'Started by',

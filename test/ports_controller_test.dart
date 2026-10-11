@@ -184,6 +184,70 @@ void main() {
     });
   });
 
+  group('WSL and containers', () {
+    const postgres = ContainerInfo(
+      id: 'aaaa',
+      name: 'shop-postgres-1',
+      image: 'postgres:18',
+      composeProject: 'shop',
+    );
+    PortEntry row(int port) => controller.visible.firstWhere((e) => e.port == port);
+
+    setUp(
+      () => load([
+        entry(port: 5432, pid: 1187, name: 'docker-proxy', tech: 'PostgreSQL', distro: 'dev', container: postgres),
+        entry(port: 5433, pid: 1190, name: 'docker-proxy', tech: 'PostgreSQL', distro: 'dev', container: postgres),
+        // Linux pid 1, which on Windows would be off limits.
+        entry(port: 8080, pid: 1, name: 'node', distro: 'dev', cwd: '/home/me/shop', hostCwd: r'\\wsl.localhost\dev\home\me\shop'),
+        // Same pid number as the Linux process above, but a Windows process.
+        entry(port: 9000, pid: 1, name: 'weird.exe'),
+        // A relayed port nothing could be found behind.
+        entry(port: 7000, pid: 54036, name: 'wslrelay.exe', tech: 'WSL'),
+      ]),
+    );
+
+    test('a Linux process may be killed whatever its pid', () {
+      expect(controller.killBlockedReason(row(8080)), isNull);
+      expect(controller.killBlockedReason(row(5432)), isNull);
+      expect(controller.killBlockedReason(row(9000)), contains('kernel'));
+    });
+
+    test('the shared WSL relay itself is never offered for killing', () {
+      expect(controller.killBlockedReason(row(7000)), contains('relay for every WSL port'));
+    });
+
+    test('ports are grouped by container, not by forwarder pid', () {
+      expect([for (final e in controller.portsSharingProcess(row(5432))) e.port], [5433]);
+      // A Windows pid and a Linux pid that happen to match are unrelated.
+      expect(controller.portsSharingProcess(row(8080)), isEmpty);
+    });
+
+    test('the folder to open is the Windows view of the Linux one', () {
+      expect(row(8080).folder, r'\\wsl.localhost\dev\home\me\shop');
+      // A bare Linux path is never handed to Explorer.
+      expect(row(5432).folder, isNull);
+    });
+
+    test('filtering finds them by distribution, container, image and kind', () {
+      for (final (query, expected) in [
+        ('wsl', [8080, 7000, 5433, 5432]),
+        ('docker', [5433, 5432]),
+        ('shop-postgres', [5433, 5432]),
+        ('postgres:18', [5433, 5432]),
+        ('dev node', [8080]),
+        ('/home/me', [8080]),
+      ]) {
+        controller.query = query;
+        expect(ports(), expected, reason: 'query "$query"');
+      }
+    });
+
+    test('stopping a container removes every port it published', () async {
+      expect(await controller.kill(row(5432)), KillResult.killed);
+      expect(ports(), [9000, 8080, 7000]);
+    });
+  });
+
   group('refresh', () {
     test('a manual rescan asks for fresh detection, polling does not', () async {
       await load([entry()]);

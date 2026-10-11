@@ -89,6 +89,10 @@ class PortsController extends ChangeNotifier {
       if (entry.process.restricted && entry.process.pid > 4) entry.process.pid,
   }.length;
 
+  /// Windows processes that hold ports on behalf of others. A row still
+  /// showing one of these is a port we could not trace any further.
+  static const _sharedRelays = {'wslrelay.exe', 'wslhost.exe'};
+
   /// Starts polling. Call once.
   void start() {
     if (!isSupported) return;
@@ -175,10 +179,17 @@ class PortsController extends ChangeNotifier {
   /// Why [entry]'s process must not be killed from here, or null if it may be.
   String? killBlockedReason(PortEntry entry) {
     final process = entry.process;
+    // Linux pids start at 1, so none of the Windows rules below apply.
+    if (process.isInWsl) return null;
     if (process.pid <= 4) return 'This is the Windows kernel';
     if (process.pid == ownPid) return 'This is Port Why itself';
-    if (_criticalProcesses.contains(process.name.toLowerCase())) {
+    final name = process.name.toLowerCase();
+    if (_criticalProcesses.contains(name)) {
       return 'Windows cannot run without ${process.name}';
+    }
+    if (_sharedRelays.contains(name)) {
+      return 'This is the relay for every WSL port, and what is behind this '
+          'one could not be identified';
     }
     return null;
   }
@@ -195,7 +206,7 @@ class PortsController extends ChangeNotifier {
   /// Other ports that would close if [entry]'s process were killed.
   List<PortEntry> portsSharingProcess(PortEntry entry) => [
     for (final other in _entries)
-      if (other.process.pid == entry.process.pid && other.id != entry.id) other,
+      if (other.ownerKey == entry.ownerKey && other.id != entry.id) other,
   ];
 
   Future<KillResult> kill(PortEntry entry) async {

@@ -116,6 +116,10 @@ class ProjectDetector {
   /// other folders directly under the home directory do not.
   bool _isNameworthy(String directory) {
     if (!isProjectTerritory(directory)) return false;
+    if (_linuxParts(_normalize(directory)!) case final parts?) {
+      final home = _linuxHomeDepth(parts);
+      return home == 0 || parts.length > home + 1;
+    }
     return _normalize(_path.dirname(directory)) != _home;
   }
 
@@ -124,12 +128,64 @@ class ProjectDetector {
   /// `.cargo`, `.vscode`). Installed software and tool caches live there, not
   /// projects, and they are full of stray manifests: every Electron app and
   /// every global npm install ships a package.json.
+  ///
+  /// A folder inside a WSL distribution (`\\wsl.localhost\Ubuntu\...`) is
+  /// judged by the equivalent Linux rules.
   bool isProjectTerritory(String directory) {
     final dir = _normalize(directory);
     if (dir == null || _path.dirname(dir) == dir) return false;
+    if (_linuxParts(dir) case final parts?) return _isLinuxProjectTerritory(parts);
     if (dir == _home) return false;
     if (_home != null && dir.startsWith('$_home\\.')) return false;
     return !_offLimits.any((root) => dir == root || dir.startsWith('$root\\'));
+  }
+
+  static final _wslShare = RegExp(r'^\\\\(?:wsl\.localhost|wsl\$)\\[^\\]+\\?(.*)$');
+
+  /// Top-level Linux directories that hold the system, not anyone's work.
+  /// `/opt`, `/srv` and `/mnt` are deliberately absent: projects do live there.
+  static const _linuxSystemDirs = {
+    'bin',
+    'boot',
+    'dev',
+    'etc',
+    'init',
+    'lib',
+    'lib32',
+    'lib64',
+    'libx32',
+    'proc',
+    'run',
+    'sbin',
+    'snap',
+    'sys',
+    'tmp',
+    'usr',
+    'var',
+  };
+
+  /// The path below the distribution root, split into parts, if [normalized]
+  /// is inside a WSL distribution.
+  static List<String>? _linuxParts(String normalized) {
+    final match = _wslShare.firstMatch(normalized);
+    if (match == null) return null;
+    return match[1]!.split(r'\').where((part) => part.isNotEmpty).toList();
+  }
+
+  /// How many leading parts make up a home directory: `/home/me` or `/root`.
+  static int _linuxHomeDepth(List<String> parts) => switch (parts) {
+    ['root', ...] => 1,
+    ['home', _, ...] => 2,
+    _ => 0,
+  };
+
+  static bool _isLinuxProjectTerritory(List<String> parts) {
+    if (parts.isEmpty || parts.length == 1 && parts.first == 'home') return false;
+    if (_linuxSystemDirs.contains(parts.first)) return false;
+    final home = _linuxHomeDepth(parts);
+    if (home == 0) return true;
+    // Not the home directory itself, nor a dot-folder inside it (~/.nvm).
+    return parts.length > home && !parts[home].startsWith('.');
   }
 
   DetectedProject? _findUp(String start) {
