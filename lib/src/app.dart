@@ -1,7 +1,11 @@
 import 'package:flutter/material.dart';
 
 import 'data/port_repository.dart';
+import 'ui/ambient.dart';
+import 'ui/exp_bench.dart'; // EXPERIMENT
 import 'ui/home_page.dart';
+import 'ui/theme.dart';
+import 'ui/title_bar.dart';
 
 class PortWhyApp extends StatelessWidget {
   const PortWhyApp({super.key, required this.repository});
@@ -13,27 +17,11 @@ class PortWhyApp extends StatelessWidget {
     return MaterialApp(
       title: 'Port Why',
       debugShowCheckedModeBanner: false,
-      theme: _theme(Brightness.light),
-      darkTheme: _theme(Brightness.dark),
-      home: HomePage(repository: repository),
-    );
-  }
-
-  static ThemeData _theme(Brightness brightness) {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xff3d7dff),
-      brightness: brightness,
-    );
-    return ThemeData(
-      colorScheme: scheme,
-      visualDensity: VisualDensity.compact,
-      tooltipTheme: const TooltipThemeData(
-        waitDuration: Duration(milliseconds: 450),
-      ),
-      snackBarTheme: const SnackBarThemeData(
-        behavior: SnackBarBehavior.floating,
-        width: 560,
-      ),
+      // Neon needs the dark: there is no light theme.
+      theme: buildTheme(),
+      // Above the navigator, so dialogs keep time with the page beneath them.
+      builder: (context, child) => Ambient(child: WindowFrame(child: child!)),
+      home: benchKind != null ? BenchPage(kind: benchKind!) : HomePage(repository: repository), // EXPERIMENT
     );
   }
 }

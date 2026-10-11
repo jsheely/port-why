@@ -2,6 +2,7 @@
 
 #include <dwmapi.h>
 #include <flutter_windows.h>
+#include <windowsx.h>
 
 #include "resource.h"
 
@@ -16,15 +17,30 @@ namespace {
 #define DWMWA_USE_IMMERSIVE_DARK_MODE 20
 #endif
 
+/// Window attribute that colours the frame. Windows 11 only; redefined for
+/// the same reason as above.
+#ifndef DWMWA_BORDER_COLOR
+#define DWMWA_BORDER_COLOR 34
+#endif
+
 constexpr const wchar_t kWindowClassName[] = L"FLUTTER_RUNNER_WIN32_WINDOW";
 
-/// Registry key for app theme preference.
-///
-/// A value of 0 indicates apps should use dark mode. A non-zero or missing
-/// value indicates apps should use light mode.
-constexpr const wchar_t kGetPreferredBrightnessRegKey[] =
-  L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize";
-constexpr const wchar_t kGetPreferredBrightnessRegValue[] = L"AppsUseLightTheme";
+/// A dim edge to frame the app's backdrop.
+constexpr COLORREF kBorderColor = RGB(0x1b, 0x2a, 0x4a);
+
+/// The app draws its own title bar across the top of the client area. These
+/// are its height and the width of the buttons at its right-hand end, in
+/// logical pixels, and must match TitleBar in lib/src/ui/title_bar.dart.
+constexpr int kTitleBarHeight = 32;
+constexpr int kWindowButtonsWidth = 138;
+
+/// How much of the top edge resizes the window rather than belonging to the
+/// title bar, and how far along it the corners reach.
+constexpr int kResizeStrip = 5;
+constexpr int kResizeCorner = 16;
+
+/// The Flutter view's own window procedure, which ContentProc stands in for.
+static WNDPROC g_content_proc = nullptr;
 
 // The number of Win32Window objects that currently exist.
 static int g_active_window_count = 0;
@@ -51,6 +67,47 @@ void EnableFullDpiSupportIfAvailable(HWND hwnd) {
     enable_non_client_dpi_scaling(hwnd);
   }
   FreeLibrary(user32_module);
+}
+
+// Which part of the frame the app draws itself is at |lparam|, a point on
+// screen as WM_NCHITTEST gives it: HTCLIENT where the point is Flutter's.
+LRESULT HitTestFrame(HWND window, LPARAM lparam) {
+  POINT point = {GET_X_LPARAM(lparam), GET_Y_LPARAM(lparam)};
+  ScreenToClient(window, &point);
+  RECT client;
+  GetClientRect(window, &client);
+  double scale_factor = GetDpiForWindow(window) / 96.0;
+
+  // A maximized window has no edge to drag.
+  if (!IsZoomed(window) && point.y < Scale(kResizeStrip, scale_factor)) {
+    int corner = Scale(kResizeCorner, scale_factor);
+    if (point.x < corner) {
+      return HTTOPLEFT;
+    }
+    if (point.x >= client.right - corner) {
+      return HTTOPRIGHT;
+    }
+    return HTTOP;
+  }
+  if (point.y < Scale(kTitleBarHeight, scale_factor) &&
+      point.x < client.right - Scale(kWindowButtonsWidth, scale_factor)) {
+    return HTCAPTION;
+  }
+  return HTCLIENT;
+}
+
+// Window procedure for the Flutter view. The view covers the whole client
+// area, so it has to step aside wherever the frame is for Windows to ask the
+// top level window about it instead.
+LRESULT CALLBACK ContentProc(HWND content,
+                             UINT message,
+                             WPARAM wparam,
+                             LPARAM lparam) noexcept {
+  if (message == WM_NCHITTEST &&
+      HitTestFrame(GetAncestor(content, GA_PARENT), lparam) != HTCLIENT) {
+    return HTTRANSPARENT;
+  }
+  return CallWindowProc(g_content_proc, content, message, wparam, lparam);
 }
 
 }  // namespace
@@ -206,6 +263,24 @@ Win32Window::MessageHandler(HWND hwnd,
       return 0;
     }
 
+    case WM_NCCALCSIZE: {
+      // Keep the borders Windows resizes by, but give the title bar's room
+      // to the client area. |lparam| starts with the window's rectangle
+      // whatever |wparam| is.
+      auto rect = reinterpret_cast<RECT*>(lparam);
+      const RECT window = *rect;
+      DefWindowProc(hwnd, message, wparam, lparam);
+      // A maximized window hangs off the screen by a border all round.
+      rect->top =
+          IsZoomed(hwnd) ? window.top + (rect->left - window.left) : window.top;
+      return 0;
+    }
+
+    case WM_NCHITTEST: {
+      LRESULT hit = DefWindowProc(hwnd, message, wparam, lparam);
+      return hit == HTCLIENT ? HitTestFrame(hwnd, lparam) : hit;
+    }
+
     case WM_SIZE: {
       RECT rect = GetClientArea();
       if (child_content_ != nullptr) {
@@ -250,6 +325,8 @@ Win32Window* Win32Window::GetThisFromHandle(HWND const window) noexcept {
 void Win32Window::SetChildContent(HWND content) {
   child_content_ = content;
   SetParent(content, window_handle_);
+  g_content_proc = reinterpret_cast<WNDPROC>(SetWindowLongPtr(
+      content, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(ContentProc)));
   RECT frame = GetClientArea();
 
   MoveWindow(content, frame.left, frame.top, frame.right - frame.left,
@@ -282,16 +359,11 @@ void Win32Window::OnDestroy() {
 }
 
 void Win32Window::UpdateTheme(HWND const window) {
-  DWORD light_mode;
-  DWORD light_mode_size = sizeof(light_mode);
-  LSTATUS result = RegGetValue(HKEY_CURRENT_USER, kGetPreferredBrightnessRegKey,
-                               kGetPreferredBrightnessRegValue,
-                               RRF_RT_REG_DWORD, nullptr, &light_mode,
-                               &light_mode_size);
-
-  if (result == ERROR_SUCCESS) {
-    BOOL enable_dark_mode = light_mode == 0;
-    DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
-                          &enable_dark_mode, sizeof(enable_dark_mode));
-  }
+  // The app is dark whatever the system theme is, so its frame is too.
+  BOOL enable_dark_mode = TRUE;
+  DwmSetWindowAttribute(window, DWMWA_USE_IMMERSIVE_DARK_MODE,
+                        &enable_dark_mode, sizeof(enable_dark_mode));
+  // Before Windows 11 this fails, leaving the stock dark frame.
+  DwmSetWindowAttribute(window, DWMWA_BORDER_COLOR, &kBorderColor,
+                        sizeof(kBorderColor));
 }

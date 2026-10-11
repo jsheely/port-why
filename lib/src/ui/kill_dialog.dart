@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 import '../models.dart';
+import 'glass.dart';
+import 'theme.dart';
 
 /// Asks before killing [entry]'s process. Resolves to true only on an explicit
 /// confirmation.
@@ -9,28 +11,54 @@ Future<bool> confirmKill(
   PortEntry entry, {
   required List<PortEntry> alsoClosing,
 }) async {
-  final confirmed = await showDialog<bool>(
+  final confirmed = await showGeneralDialog<bool>(
     context: context,
-    builder: (context) => _KillDialog(entry: entry, alsoClosing: alsoClosing),
+    barrierDismissible: true,
+    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
+    barrierColor: Neon.abyss.withValues(alpha: 0.72),
+    transitionDuration: const Duration(milliseconds: 280),
+    pageBuilder: (context, animation, _) => _KillDialog(
+      entry: entry,
+      alsoClosing: alsoClosing,
+      animation: animation,
+    ),
+    // The dialog brings itself in. The stock fade would put its glass inside
+    // an opacity layer, where there is nothing behind it to blur.
+    transitionBuilder: (context, animation, _, child) => child,
   );
   return confirmed ?? false;
 }
 
 class _KillDialog extends StatelessWidget {
-  const _KillDialog({required this.entry, required this.alsoClosing});
+  const _KillDialog({
+    required this.entry,
+    required this.alsoClosing,
+    required this.animation,
+  });
 
   final PortEntry entry;
   final List<PortEntry> alsoClosing;
 
+  /// The route's own animation: 0 while closed, 1 once open.
+  final Animation<double> animation;
+
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final scheme = theme.colorScheme;
+    final scheme = Theme.of(context).colorScheme;
+    final danger = scheme.error;
     final process = entry.process;
     final container = process.container;
     final project = entry.project == null ? '' : ' (${entry.project!.name})';
     final otherPorts = {for (final other in alsoClosing) other.port}.toList()
       ..sort();
+    final title = container == null
+        ? 'Kill ${process.name}?'
+        : 'Stop ${container.name}?';
+    final body = TextStyle(
+      fontSize: 13.5,
+      height: 1.45,
+      color: scheme.onSurface.withValues(alpha: 0.92),
+    );
 
     // What exactly is about to be stopped, and where it lives.
     final target = switch ((container, process.distro)) {
@@ -42,77 +70,172 @@ class _KillDialog extends StatelessWidget {
       (null, null) => 'This ends process ${process.pid}$project',
     };
 
-    return AlertDialog(
-      icon: Icon(Icons.stop_circle_outlined, color: scheme.error),
-      title: Text(
-        container == null ? 'Kill ${process.name}?' : 'Stop ${container.name}?',
-      ),
-      content: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 440),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              '$target, which is holding port ${entry.port} open. '
-              'Anything it has not saved is lost.',
-            ),
-            if (otherPorts.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              Text(
-                'It also holds ${otherPorts.length == 1 ? 'port' : 'ports'} '
-                '${_summarise(otherPorts)}, which will close too.',
+    final content = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        CustomPaint(size: const Size.fromHeight(7), painter: _HazardPainter(danger)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.stop_circle_outlined,
+                    color: danger,
+                    size: 26,
+                    shadows: neonGlow(danger, spread: 14),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.4,
+                        color: scheme.onSurface,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
-            if (entry.category == PortCategory.system) ...[
-              const SizedBox(height: 12),
+              const SizedBox(height: 14),
               Text(
-                'This is part of Windows. Killing it can break networking or '
-                'sign you out.',
-                style: TextStyle(color: scheme.error),
+                '$target, which is holding port ${entry.port} open. '
+                'Anything it has not saved is lost.',
+                style: body,
               ),
-            ],
-            if (process.commandLine case final command?) ...[
-              const SizedBox(height: 16),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: scheme.surfaceContainerHighest,
-                  borderRadius: BorderRadius.circular(8),
+              if (otherPorts.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'It also holds ${otherPorts.length == 1 ? 'port' : 'ports'} '
+                  '${_summarise(otherPorts)}, which will close too.',
+                  style: body,
                 ),
-                child: Text(
-                  command,
-                  maxLines: 4,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontFamily: 'Consolas',
-                    color: scheme.onSurfaceVariant,
+              ],
+              if (entry.category == PortCategory.system) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'This is part of Windows. Killing it can break networking or '
+                  'sign you out.',
+                  style: body.copyWith(color: Neon.yellow),
+                ),
+              ],
+              if (process.commandLine case final command?) ...[
+                const SizedBox(height: 16),
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: well(radius: 8),
+                  child: Text(
+                    command,
+                    maxLines: 4,
+                    overflow: TextOverflow.ellipsis,
+                    style: mono.copyWith(
+                      fontSize: 12,
+                      height: 1.4,
+                      color: scheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
+              ],
+              const SizedBox(height: 22),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    style: TextButton.styleFrom(
+                      foregroundColor: scheme.onSurfaceVariant,
+                    ),
+                    onPressed: () => Navigator.of(context).pop(false),
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton(
+                    style: neonButton(danger),
+                    onPressed: () => Navigator.of(context).pop(true),
+                    child: Text(
+                      container == null ? 'Kill process' : 'Stop container',
+                    ),
+                  ),
+                ],
               ),
             ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
-        ),
-        FilledButton(
-          style: FilledButton.styleFrom(
-            backgroundColor: scheme.error,
-            foregroundColor: scheme.onError,
           ),
-          onPressed: () => Navigator.of(context).pop(true),
-          child: Text(container == null ? 'Kill process' : 'Stop container'),
         ),
       ],
+    );
+
+    return SafeArea(
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 480),
+            child: Semantics(
+              scopesRoute: true,
+              namesRoute: true,
+              explicitChildNodes: true,
+              label: title,
+              child: AnimatedBuilder(
+                animation: animation,
+                builder: (context, content) => Transform.scale(
+                  // Lands with a slight bounce.
+                  scale: 0.9 + 0.1 * Curves.easeOutBack.transform(animation.value),
+                  child: Glass(
+                    accent: danger,
+                    radius: 20,
+                    cut: 22,
+                    blur: 28,
+                    tint: 0.68,
+                    strength: Curves.easeOutCubic.transform(animation.value),
+                    emphasis: 0.55,
+                    child: content!,
+                  ),
+                ),
+                child: FadeTransition(opacity: animation, child: content),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 
   static String _summarise(List<int> ports) => ports.length <= 6
       ? ports.join(', ')
       : '${ports.take(6).join(', ')} and ${ports.length - 6} more';
+}
+
+/// The slanted stripes of warning tape.
+class _HazardPainter extends CustomPainter {
+  const _HazardPainter(this.color);
+
+  final Color color;
+
+  static const _stripe = 9.0;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final lean = size.height;
+    final tape = Path();
+    for (var x = -lean; x < size.width; x += 2 * _stripe) {
+      tape
+        ..moveTo(x, size.height)
+        ..lineTo(x + lean, 0)
+        ..lineTo(x + lean + _stripe, 0)
+        ..lineTo(x + _stripe, size.height)
+        ..close();
+    }
+    canvas
+      ..clipRect(Offset.zero & size)
+      ..drawPath(tape, Paint()..color = color.withValues(alpha: 0.85));
+  }
+
+  @override
+  bool shouldRepaint(_HazardPainter old) => old.color != color;
 }

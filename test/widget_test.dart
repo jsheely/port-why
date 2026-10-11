@@ -8,6 +8,15 @@ import 'package:port_why/src/ui/tech_icon.dart';
 
 import 'support.dart';
 
+/// Lets entrances, dialogs and toasts finish. The backdrop never stops moving,
+/// so there is no waiting for the app to fall still.
+Future<void> settle(WidgetTester tester) async {
+  await tester.pump();
+  for (var i = 0; i < 5; i++) {
+    await tester.pump(const Duration(milliseconds: 300));
+  }
+}
+
 void main() {
   late FakePortRepository repository;
 
@@ -28,26 +37,34 @@ void main() {
     entry(port: 445, pid: 4, name: 'System', tech: 'Windows kernel', icon: 'windows', category: PortCategory.system, restricted: true),
   ];
 
-  Future<void> pumpApp(WidgetTester tester) async {
+  /// A window wide enough for three cards abreast.
+  void openWindow(WidgetTester tester) {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(PortWhyApp(repository: repository));
-    await tester.pump();
   }
 
-  /// Port numbers in the order they appear on screen, top to bottom.
+  Future<void> pumpApp(WidgetTester tester) async {
+    openWindow(tester);
+    await tester.pumpWidget(PortWhyApp(repository: repository));
+    await settle(tester);
+  }
+
+  /// Port numbers in reading order: along each row of cards, top row first.
   List<int> portsShown(WidgetTester tester) {
-    final found = <(double, int)>[];
+    final found = <(Offset, int)>[];
     for (final element in find.byType(Text).evaluate()) {
       final text = (element.widget as Text).data;
       final port = text == null ? null : int.tryParse(text);
       final isPortCell = (element.widget as Text).style?.fontWeight == FontWeight.w700;
       if (port != null && isPortCell) {
-        found.add((tester.getTopLeft(find.byWidget(element.widget)).dy, port));
+        found.add((tester.getTopLeft(find.byWidget(element.widget)), port));
       }
     }
-    found.sort((a, b) => a.$1.compareTo(b.$1));
+    found.sort((a, b) {
+      final byRow = a.$1.dy.compareTo(b.$1.dy);
+      return byRow != 0 ? byRow : a.$1.dx.compareTo(b.$1.dx);
+    });
     return [for (final (_, port) in found) port];
   }
 
@@ -61,15 +78,54 @@ void main() {
   testWidgets('lists every port, highest first, with project and tech', (tester) async {
     await pumpApp(tester);
     expect(portsShown(tester), [8000, 5432, 5174, 5173, 445]);
-    // Two rows, each showing "shop" as the project and again as the folder.
+    // Two cards, each showing "shop" as the project and again as the folder.
     expect(find.text('shop'), findsNWidgets(4));
     expect(find.text(r'C:\work'), findsNWidgets(3));
     expect(find.text('FastAPI'), findsOneWidget);
     expect(find.text('Vite'), findsNWidgets(2));
     expect(find.text('5 open ports held by 4 processes'), findsOneWidget);
-    // Each row carries its tech icon.
+    // Each card carries its tech icon.
     expect(find.byType(TechIcon), findsNWidgets(5));
     expect(find.byIcon(techGlyphs['vuedotjs']!.icon), findsNWidgets(2));
+  });
+
+  testWidgets('cards sit as many abreast as the window has room for', (tester) async {
+    Finder card(int port) => find.byKey(ValueKey('tcp:$port:${repository.entries.firstWhere((e) => e.port == port).process.pid}'));
+
+    await pumpApp(tester);
+    // Three to a row at this width, so the fourth starts the next row.
+    expect(tester.getTopLeft(card(5432)).dy, tester.getTopLeft(card(8000)).dy);
+    expect(tester.getTopLeft(card(5173)).dy, greaterThan(tester.getTopLeft(card(8000)).dy));
+    expect(tester.getTopLeft(card(5173)).dx, tester.getTopLeft(card(8000)).dx);
+
+    tester.view.physicalSize = const Size(520, 900);
+    await settle(tester);
+    expect(tester.getTopLeft(card(5432)).dy, greaterThan(tester.getTopLeft(card(8000)).dy));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a port that opens later joins the deck', (tester) async {
+    await pumpApp(tester);
+    repository.entries = [...sample(), entry(port: 9229, pid: 4500, tech: 'Node.js', icon: 'nodedotjs')];
+    // The next poll picks it up, and its entrance runs its course.
+    await tester.pump(const Duration(seconds: 2));
+    await tester.pump(const Duration(seconds: 3));
+    expect(portsShown(tester).first, 9229);
+    expect(find.text('6 open ports held by 5 processes'), findsOneWidget);
+  });
+
+  testWidgets('with reduced motion the app falls still', (tester) async {
+    tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    openWindow(tester);
+    await tester.pumpWidget(PortWhyApp(repository: repository));
+    await tester.pump();
+    // Cards are simply there, with no entrance to sit through...
+    expect(tester.getSize(find.byKey(const ValueKey('tcp:8000:4200'))).height, greaterThan(100));
+    expect(tester.getTopLeft(find.text('8000')).dy, tester.getTopLeft(find.text('5174')).dy);
+    // ...and nothing keeps asking for frames, which this would wait on for ever.
+    await tester.pumpAndSettle();
+    expect(portsShown(tester), hasLength(5));
   });
 
   testWidgets('typing in the filter narrows the list', (tester) async {
@@ -91,21 +147,18 @@ void main() {
 
   testWidgets('scope buttons filter by category', (tester) async {
     await pumpApp(tester);
-    Finder scope(String label) => find.descendant(
-      of: find.byType(SegmentedButton<ScopeFilter>),
-      matching: find.textContaining(label),
-    );
-    // Each button carries the number of rows it would show.
-    expect(scope('Projects  3'), findsOneWidget);
-    await tester.tap(scope('Projects'));
+    // Each segment carries the number of cards it would show.
+    Finder scope(ScopeFilter scope, int count) =>
+        find.textContaining(RegExp('^${scope.label}  $count\$'));
+    await tester.tap(scope(ScopeFilter.projects, 3));
     await tester.pump();
     expect(portsShown(tester), [8000, 5174, 5173]);
-    await tester.tap(scope('System'));
+    await tester.tap(scope(ScopeFilter.system, 1));
     await tester.pump();
     expect(portsShown(tester), [445]);
   });
 
-  testWidgets('clicking a column header re-sorts', (tester) async {
+  testWidgets('choosing a sort order re-sorts', (tester) async {
     await pumpApp(tester);
     await tester.tap(find.text('PORT'));
     await tester.pump();
@@ -116,13 +169,18 @@ void main() {
     expect(portsShown(tester).take(3), [8000, 5174, 5173]);
   });
 
-  testWidgets('a row expands to show the command line', (tester) async {
+  testWidgets('a card opens to show the command line', (tester) async {
     await pumpApp(tester);
     expect(find.textContaining('vite.js'), findsNothing);
     await tester.tap(find.text('5173'));
     await tester.pump();
     expect(find.textContaining(r'node_modules\vite\bin\vite.js'), findsOneWidget);
     expect(find.textContaining('this machine only'), findsOneWidget);
+
+    await settle(tester);
+    await tester.tap(find.byTooltip('Close details'));
+    await settle(tester);
+    expect(find.textContaining('vite.js'), findsNothing);
   });
 
   testWidgets('open folder asks the repository for the working folder', (tester) async {
@@ -135,13 +193,13 @@ void main() {
   testWidgets('kill asks first, and cancelling kills nothing', (tester) async {
     await pumpApp(tester);
     await tester.tap(rowAction(5173, Icons.stop_circle_outlined));
-    await tester.pumpAndSettle();
+    await settle(tester);
     expect(find.text('Kill node.exe?'), findsOneWidget);
     // The other port held by the same process is called out.
     expect(find.textContaining('It also holds port 5174'), findsOneWidget);
 
     await tester.tap(find.text('Cancel'));
-    await tester.pumpAndSettle();
+    await settle(tester);
     expect(repository.killed, isEmpty);
     expect(portsShown(tester), hasLength(5));
   });
@@ -149,9 +207,9 @@ void main() {
   testWidgets('confirming kills the process and its ports leave the list', (tester) async {
     await pumpApp(tester);
     await tester.tap(rowAction(5173, Icons.stop_circle_outlined));
-    await tester.pumpAndSettle();
+    await settle(tester);
     await tester.tap(find.text('Kill process'));
-    await tester.pumpAndSettle();
+    await settle(tester);
 
     expect(repository.killed.single.process.pid, 4100);
     expect(portsShown(tester), [8000, 5432, 445]);
@@ -162,9 +220,9 @@ void main() {
     repository.killResult = KillResult.accessDenied;
     await pumpApp(tester);
     await tester.tap(rowAction(5432, Icons.stop_circle_outlined));
-    await tester.pumpAndSettle();
+    await settle(tester);
     await tester.tap(find.text('Kill process'));
-    await tester.pumpAndSettle();
+    await settle(tester);
     expect(find.textContaining('Windows refused'), findsOneWidget);
     expect(portsShown(tester), hasLength(5));
   });
@@ -263,12 +321,12 @@ void main() {
     testWidgets('offers to stop the container rather than kill a process', (tester) async {
       await pumpApp(tester);
       await tester.tap(action(Icons.stop_circle_outlined));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(find.text('Stop e2b-api-1?'), findsOneWidget);
       expect(find.textContaining('Docker container e2b-api-1 (e2b) in WSL (dev)'), findsOneWidget);
 
       await tester.tap(find.text('Stop container'));
-      await tester.pumpAndSettle();
+      await settle(tester);
       expect(repository.killed.single.process.container, api);
       expect(find.textContaining('Stopped container e2b-api-1. Port 3000 is free.'), findsOneWidget);
       expect(portsShown(tester), isNot(contains(3000)));
@@ -279,10 +337,10 @@ void main() {
     repository.entries = [...sample(), entry(port: 5353, protocol: Protocol.udp, pid: 4400, name: 'mdns.exe')];
     await pumpApp(tester);
     expect(portsShown(tester), isNot(contains(5353)));
-    await tester.tap(find.widgetWithText(FilterChip, 'UDP'));
-    await tester.pumpAndSettle();
+    await tester.tap(find.text('UDP'));
+    await settle(tester);
     expect(portsShown(tester), contains(5353));
-    // With both protocols listed, rows are tagged with theirs.
+    // With both protocols listed, cards are tagged with theirs.
     expect(find.text('TCP'), findsWidgets);
   });
 }
