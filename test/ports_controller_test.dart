@@ -1,4 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as p;
+import 'package:port_why/src/data/favorites_store.dart';
 import 'package:port_why/src/models.dart';
 import 'package:port_why/src/state/ports_controller.dart';
 
@@ -135,6 +139,54 @@ void main() {
       ]);
       controller.sortBy(SortColumn.tech);
       expect(ports(), [30, 20, 10]);
+    });
+  });
+
+  group('favorites', () {
+    test('default to the usual dev ports and report who holds them', () async {
+      await load([entry(port: 3000, pid: 7), entry(port: 9000, pid: 8)]);
+      expect(controller.favorites, [3000, 5173, 8080]);
+      expect(controller.holdersOf(3000).single.process.pid, 7);
+      expect(controller.holdersOf(8080), isEmpty);
+      // Filtering the list does not make a held port look free.
+      controller.query = '9000';
+      expect(controller.holdersOf(3000), hasLength(1));
+    });
+
+    test('are kept in order and saved as they change', () async {
+      final store = MemoryFavoritesStore();
+      controller = PortsController(FakePortRepository([]), favorites: store);
+      addTearDown(controller.dispose);
+      controller
+        ..setFavorite(4200, true)
+        ..setFavorite(4200, true)
+        ..setFavorite(8080, false)
+        ..setFavorite(70000, true);
+      expect(controller.favorites, [3000, 4200, 5173]);
+      expect(controller.isFavorite(4200), isTrue);
+      expect(store.load(), [3000, 4200, 5173]);
+    });
+
+    test('saved ones replace the defaults, even when there are none', () {
+      for (final saved in [<int>[], [9229, 80]]) {
+        final restored = PortsController(
+          FakePortRepository([]),
+          favorites: MemoryFavoritesStore(saved),
+        );
+        addTearDown(restored.dispose);
+        expect(restored.favorites, [...saved]..sort());
+      }
+    });
+
+    test('survive in a file, and a mangled file means the defaults', () {
+      final sandbox = Sandbox();
+      addTearDown(sandbox.dispose);
+      final store = FileFavoritesStore(p.join(sandbox.root, 'Port Why', 'favorites.json'));
+      expect(store.load(), isNull);
+      store.save([3000, 8443]);
+      expect(store.load(), [3000, 8443]);
+      File(store.path).writeAsStringSync('{not json');
+      expect(store.load(), isNull);
     });
   });
 

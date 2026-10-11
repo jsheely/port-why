@@ -5,6 +5,7 @@ import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../data/favorites_store.dart';
 import '../data/port_repository.dart';
 import '../models.dart';
 import '../state/ports_controller.dart';
@@ -16,9 +17,10 @@ import 'port_deck.dart';
 import 'theme.dart';
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.repository});
+  const HomePage({super.key, required this.repository, this.favorites});
 
   final PortRepository repository;
+  final FavoritesStore? favorites;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -28,6 +30,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   late final PortsController _controller = PortsController(
     widget.repository,
     ownPid: pid,
+    favorites: widget.favorites,
   );
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
@@ -77,6 +80,16 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   void _clearSearch() {
     _search.clear();
     _controller.query = '';
+  }
+
+  /// Narrows the deck to one port, or widens it again if it already is.
+  void _showPort(int port) {
+    final filter = ':$port';
+    if (_controller.query.trim() == filter) return _clearSearch();
+    _search.text = filter;
+    _controller
+      ..scope = ScopeFilter.all
+      ..query = filter;
   }
 
   void _rescan() {
@@ -160,6 +173,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         onToggle: _toggle,
                         onKill: _kill,
                         onOpenFolder: _openFolder,
+                        onFavorite: (entry) => _controller.setFavorite(
+                          entry.port,
+                          !_controller.isFavorite(entry.port),
+                        ),
                         footerClearance: _StatusBar.height + 12,
                         header: expFlags.contains('noheader') ? const SizedBox(height: 120) : _ControlPanel( // EXPERIMENT
                           controller: _controller,
@@ -169,6 +186,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                           spin: _spin,
                           onClear: _clearSearch,
                           onRescan: _rescan,
+                          onShowPort: _showPort,
                         ),
                         placeholder: _Placeholder(
                           controller: _controller,
@@ -207,6 +225,7 @@ class _ControlPanel extends StatelessWidget {
     required this.spin,
     required this.onClear,
     required this.onRescan,
+    required this.onShowPort,
   });
 
   final PortsController controller;
@@ -216,6 +235,7 @@ class _ControlPanel extends StatelessWidget {
   final Animation<double> spin;
   final VoidCallback onClear;
   final VoidCallback onRescan;
+  final ValueChanged<int> onShowPort;
 
   /// Narrower than this and the search no longer fits beside the title.
   /// The width is for text at its normal size, and grows with it.
@@ -308,7 +328,11 @@ class _ControlPanel extends StatelessWidget {
                 ],
               ),
             ],
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
+            sideways(
+              _FavoritesBar(controller: controller, onShowPort: onShowPort),
+            ),
+            const SizedBox(height: 4),
             // The sort order on the left and the scope switch on the right,
             // or one above the other once they no longer fit side by side.
             SizedBox(
@@ -806,6 +830,241 @@ class _Pill extends StatelessWidget {
                 child: Text(label),
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// The ports being watched, each saying what holds it or that it is free.
+class _FavoritesBar extends StatelessWidget {
+  const _FavoritesBar({required this.controller, required this.onShowPort});
+
+  final PortsController controller;
+  final ValueChanged<int> onShowPort;
+
+  @override
+  Widget build(BuildContext context) {
+    final dim = Theme.of(context).colorScheme.onSurfaceVariant;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          'FAVORITES',
+          style: caption.copyWith(color: dim.withValues(alpha: 0.6)),
+        ),
+        const SizedBox(width: 12),
+        for (final port in controller.favorites) ...[
+          _FavoriteChip(
+            key: ValueKey('favorite:$port'),
+            port: port,
+            holders: controller.holdersOf(port),
+            isShown: controller.query.trim() == ':$port',
+            onTap: () => onShowPort(port),
+            onRemove: () => controller.setFavorite(port, false),
+          ),
+          const SizedBox(width: 8),
+        ],
+        _AddFavorite(onAdd: (port) => controller.setFavorite(port, true)),
+      ],
+    );
+  }
+}
+
+class _FavoriteChip extends StatelessWidget {
+  const _FavoriteChip({
+    super.key,
+    required this.port,
+    required this.holders,
+    required this.isShown,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  final int port;
+
+  /// What has the port open; empty while it is free.
+  final List<PortEntry> holders;
+
+  /// Whether the deck is narrowed to this port.
+  final bool isShown;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    final dim = Theme.of(context).colorScheme.onSurfaceVariant;
+    final holder = holders.firstOrNull;
+    final color = holder == null ? dim : Neon.of(holder.category);
+    final others = {for (final entry in holders) entry.ownerKey}.length - 1;
+    final click = isShown
+        ? 'Click to show every port again.'
+        : 'Click to show only this port.';
+
+    return Tooltip(
+      message: holder == null
+          ? 'Nothing is holding port $port'
+          : 'Held by ${holder.process.container?.name ?? holder.process.name}'
+                '${others > 0 ? ' and $others more' : ''}. $click',
+      child: InkWell(
+        customBorder: const StadiumBorder(),
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 220),
+          height: 30,
+          padding: const EdgeInsets.only(left: 4, right: 3),
+          decoration: well(
+            radius: 15,
+            edge: holder == null && !isShown
+                ? null
+                : color.withValues(alpha: isShown ? 0.95 : 0.55),
+            glow: [
+              BoxShadow(
+                color: color.withValues(alpha: isShown ? 0.34 : 0),
+                blurRadius: 12,
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              PulseDot(
+                color: holder == null ? dim.withValues(alpha: 0.55) : color,
+                active: holder != null,
+                pulses: false,
+              ),
+              Text(
+                '$port',
+                style: mono.copyWith(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: holder == null ? dim : color,
+                ),
+              ),
+              const SizedBox(width: 8),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 140),
+                child: Text(
+                  holder == null
+                      ? 'free'
+                      : [
+                          holder.project?.name ?? holder.tech.name,
+                          if (others > 0) '+$others',
+                        ].join(' '),
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: holder == null ? dim.withValues(alpha: 0.7) : null,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 2),
+              SizedBox.square(
+                dimension: 24,
+                child: IconButton(
+                  tooltip: 'Stop watching port $port',
+                  icon: const Icon(Icons.close_rounded, size: 13),
+                  padding: EdgeInsets.zero,
+                  color: dim.withValues(alpha: 0.7),
+                  style: IconButton.styleFrom(
+                    minimumSize: const Size.square(24),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: onRemove,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// A plus that opens into a box to type a port number in.
+class _AddFavorite extends StatefulWidget {
+  const _AddFavorite({required this.onAdd});
+
+  final ValueChanged<int> onAdd;
+
+  @override
+  State<_AddFavorite> createState() => _AddFavoriteState();
+}
+
+class _AddFavoriteState extends State<_AddFavorite> {
+  final _text = TextEditingController();
+  late final _focus = FocusNode()..addListener(_onFocusChanged);
+  bool _isOpen = false;
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    _text.dispose();
+    super.dispose();
+  }
+
+  // Clicking away abandons it.
+  void _onFocusChanged() {
+    if (!_focus.hasFocus && _isOpen) _close();
+  }
+
+  void _close() => setState(() {
+    _isOpen = false;
+    _text.clear();
+  });
+
+  void _submit(String value) {
+    final port = int.tryParse(value);
+    if (port != null) widget.onAdd(port);
+    _close();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final dim = scheme.onSurfaceVariant;
+    if (!_isOpen) {
+      return SizedBox.square(
+        dimension: 30,
+        child: IconButton(
+          tooltip: 'Watch another port',
+          icon: const Icon(Icons.add_rounded, size: 17),
+          padding: EdgeInsets.zero,
+          color: Neon.cyan,
+          style: IconButton.styleFrom(
+            minimumSize: const Size.square(30),
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+          onPressed: () => setState(() => _isOpen = true),
+        ),
+      );
+    }
+    return Container(
+      width: 84,
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      alignment: Alignment.center,
+      decoration: well(radius: 15, edge: Neon.cyan.withValues(alpha: 0.85)),
+      child: TextField(
+        controller: _text,
+        focusNode: _focus,
+        autofocus: true,
+        keyboardType: TextInputType.number,
+        inputFormatters: [
+          FilteringTextInputFormatter.digitsOnly,
+          LengthLimitingTextInputFormatter(5),
+        ],
+        onSubmitted: _submit,
+        style: mono.copyWith(fontSize: 12.5, color: scheme.onSurface),
+        cursorColor: Neon.cyan.withValues(alpha: 0.75),
+        decoration: InputDecoration.collapsed(
+          hintText: 'port',
+          hintStyle: mono.copyWith(
+            fontSize: 12.5,
+            color: dim.withValues(alpha: 0.75),
           ),
         ),
       ),

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../data/favorites_store.dart';
 import '../data/port_repository.dart';
 import '../models.dart';
 
@@ -31,9 +32,11 @@ class PortsController extends ChangeNotifier {
     this._repository, {
     this.pollInterval = const Duration(seconds: 2),
     this.ownPid,
-  });
+    FavoritesStore? favorites,
+  }) : _store = favorites ?? MemoryFavoritesStore();
 
   final PortRepository _repository;
+  final FavoritesStore _store;
   final Duration pollInterval;
 
   /// This app's own pid, so it never offers to kill itself.
@@ -55,6 +58,13 @@ class PortsController extends ChangeNotifier {
   bool _live = true;
   SortColumn _sortColumn = SortColumn.port;
   bool _ascending = false;
+
+  /// What is watched until the user says otherwise: where dev servers
+  /// usually land.
+  static const defaultFavorites = [3000, 5173, 8080];
+
+  late List<int> _favorites = {...(_store.load() ?? defaultFavorites)}.toList()
+    ..sort();
 
   bool get isSupported => _repository.isSupported;
 
@@ -82,6 +92,29 @@ class PortsController extends ChangeNotifier {
   bool get isLive => _live;
   SortColumn get sortColumn => _sortColumn;
   bool get ascending => _ascending;
+
+  /// Ports worth watching whether or not anything holds them, lowest first.
+  List<int> get favorites => _favorites;
+
+  bool isFavorite(int port) => _favorites.contains(port);
+
+  /// Adds [port] to the favourites or takes it out, and remembers the choice.
+  void setFavorite(int port, bool favorite) {
+    if (port < 1 || port > 65535 || favorite == isFavorite(port)) return;
+    _favorites = [
+      for (final other in _favorites)
+        if (other != port) other,
+      if (favorite) port,
+    ]..sort();
+    _store.save(_favorites);
+    notifyListeners();
+  }
+
+  /// Whatever has [port] open right now, whether or not the filters show it.
+  List<PortEntry> holdersOf(int port) => [
+    for (final entry in _entries)
+      if (entry.port == port) entry,
+  ];
 
   /// How many owning processes we could not look inside.
   int get restrictedProcessCount => {

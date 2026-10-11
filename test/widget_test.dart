@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:port_why/src/app.dart';
+import 'package:port_why/src/data/favorites_store.dart';
 import 'package:port_why/src/models.dart';
 import 'package:port_why/src/state/ports_controller.dart';
 import 'package:port_why/src/ui/tech_icon.dart';
@@ -73,13 +74,22 @@ void main() {
     matching: find.byIcon(icon),
   );
 
+  /// The port number on a card, which a favourite's chip shows too.
+  Finder cardPort(int port) => find.descendant(
+    of: find.byKey(ValueKey(repository.entries.firstWhere((e) => e.port == port).id)),
+    matching: find.text('$port'),
+  );
+
+  Finder favorite(int port) => find.byKey(ValueKey('favorite:$port'));
+
   setUp(() => repository = FakePortRepository(sample()));
 
   testWidgets('lists every port, highest first, with project and tech', (tester) async {
     await pumpApp(tester);
     expect(portsShown(tester), [8000, 5432, 5174, 5173, 445]);
-    // Two cards, each showing "shop" as the project and again as the folder.
-    expect(find.text('shop'), findsNWidgets(4));
+    // Two cards, each showing "shop" as the project and again as the folder,
+    // and the favourite it holds.
+    expect(find.text('shop'), findsNWidgets(5));
     expect(find.text(r'C:\work'), findsNWidgets(3));
     expect(find.text('FastAPI'), findsOneWidget);
     expect(find.text('Vite'), findsNWidgets(2));
@@ -172,7 +182,7 @@ void main() {
   testWidgets('a card opens to show the command line', (tester) async {
     await pumpApp(tester);
     expect(find.textContaining('vite.js'), findsNothing);
-    await tester.tap(find.text('5173'));
+    await tester.tap(cardPort(5173));
     await tester.pump();
     expect(find.textContaining(r'node_modules\vite\bin\vite.js'), findsOneWidget);
     expect(find.textContaining('this machine only'), findsOneWidget);
@@ -304,7 +314,7 @@ void main() {
       // The Compose folder, leaf first, as Windows can open it.
       expect(find.text(r'\\wsl.localhost\dev\opt'), findsOneWidget);
 
-      await tester.tap(find.text('3000'));
+      await tester.tap(cardPort(3000));
       await tester.pump();
       expect(find.textContaining('WSL distribution dev'), findsOneWidget);
       expect(find.textContaining('Docker container e2b-api-1'), findsOneWidget);
@@ -330,6 +340,77 @@ void main() {
       expect(repository.killed.single.process.container, api);
       expect(find.textContaining('Stopped container e2b-api-1. Port 3000 is free.'), findsOneWidget);
       expect(portsShown(tester), isNot(contains(3000)));
+    });
+  });
+
+  group('favorites', () {
+    testWidgets('start as the usual dev ports, saying what holds each', (tester) async {
+      await pumpApp(tester);
+      expect(favorite(3000), findsOneWidget);
+      expect(favorite(8080), findsOneWidget);
+      expect(find.descendant(of: favorite(5173), matching: find.text('shop')), findsOneWidget);
+      expect(find.descendant(of: favorite(3000), matching: find.text('free')), findsOneWidget);
+    });
+
+    testWidgets('one that gets taken says by what', (tester) async {
+      await pumpApp(tester);
+      repository.entries = [...sample(), entry(port: 8080, pid: 4600, tech: 'Spring Boot')];
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+      expect(find.descendant(of: favorite(8080), matching: find.text('Spring Boot')), findsOneWidget);
+    });
+
+    testWidgets('clicking one shows only that port, and again shows them all', (tester) async {
+      await pumpApp(tester);
+      await tester.tap(favorite(5173));
+      await tester.pump();
+      expect(portsShown(tester), [5173]);
+      expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, ':5173');
+
+      await tester.tap(favorite(5173));
+      await tester.pump();
+      expect(portsShown(tester), hasLength(5));
+    });
+
+    testWidgets('a port is added by number and dropped again', (tester) async {
+      final store = MemoryFavoritesStore();
+      openWindow(tester);
+      await tester.pumpWidget(PortWhyApp(repository: repository, favorites: store));
+      await settle(tester);
+
+      await tester.tap(find.byTooltip('Watch another port'));
+      await tester.pump();
+      await tester.enterText(find.widgetWithText(TextField, 'port'), '5432');
+      await tester.testTextInput.receiveAction(TextInputAction.done);
+      await tester.pump();
+      expect(find.descendant(of: favorite(5432), matching: find.text('PostgreSQL')), findsOneWidget);
+      expect(store.load(), [3000, 5173, 5432, 8080]);
+      // The box folds away again.
+      expect(find.byType(TextField), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Stop watching port 3000'));
+      await tester.pump();
+      expect(favorite(3000), findsNothing);
+      expect(store.load(), [5173, 5432, 8080]);
+    });
+
+    testWidgets("a card's star adds its port and takes it out", (tester) async {
+      await pumpApp(tester);
+      await tester.tap(rowAction(8000, Icons.star_outline_rounded));
+      await tester.pump();
+      expect(favorite(8000), findsOneWidget);
+      await tester.tap(rowAction(8000, Icons.star_rounded));
+      await tester.pump();
+      expect(favorite(8000), findsNothing);
+    });
+
+    testWidgets('are remembered from the last run', (tester) async {
+      openWindow(tester);
+      await tester.pumpWidget(PortWhyApp(repository: repository, favorites: MemoryFavoritesStore([9000, 445])));
+      await settle(tester);
+      expect(favorite(445), findsOneWidget);
+      expect(favorite(9000), findsOneWidget);
+      expect(favorite(3000), findsNothing);
     });
   });
 

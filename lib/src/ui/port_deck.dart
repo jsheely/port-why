@@ -24,6 +24,7 @@ class PortDeck extends StatefulWidget {
     required this.onToggle,
     required this.onKill,
     required this.onOpenFolder,
+    required this.onFavorite,
     required this.placeholder,
     this.footerClearance = 0,
   });
@@ -38,6 +39,9 @@ class PortDeck extends StatefulWidget {
   final ValueChanged<PortEntry> onToggle;
   final ValueChanged<PortEntry> onKill;
   final ValueChanged<PortEntry> onOpenFolder;
+
+  /// Adds the card's port to the favourites, or takes it out.
+  final ValueChanged<PortEntry> onFavorite;
 
   /// Shown instead of the cards when there are none.
   final Widget placeholder;
@@ -230,6 +234,7 @@ class _DeckRow extends StatelessWidget {
                           now: now,
                           showProtocol: controller.includeUdp,
                           isExpanded: deck.expanded.contains(entries[slot].id),
+                          isFavorite: controller.isFavorite(entries[slot].port),
                           killBlockedReason: controller.killBlockedReason(
                             entries[slot],
                           ),
@@ -237,6 +242,7 @@ class _DeckRow extends StatelessWidget {
                           onToggle: () => deck.onToggle(entries[slot]),
                           onKill: () => deck.onKill(entries[slot]),
                           onOpenFolder: () => deck.onOpenFolder(entries[slot]),
+                          onFavorite: () => deck.onFavorite(entries[slot]),
                         ),
                 ),
               ],
@@ -264,17 +270,20 @@ class _PortCard extends StatefulWidget {
     required this.now,
     required this.showProtocol,
     required this.isExpanded,
+    required this.isFavorite,
     required this.killBlockedReason,
     required this.takeArrival,
     required this.onToggle,
     required this.onKill,
     required this.onOpenFolder,
+    required this.onFavorite,
   });
 
   final PortEntry entry;
   final DateTime now;
   final bool showProtocol;
   final bool isExpanded;
+  final bool isFavorite;
   final String? killBlockedReason;
 
   /// Asked once, as the card is created: how to make an entrance, or null to
@@ -283,6 +292,7 @@ class _PortCard extends StatefulWidget {
   final VoidCallback onToggle;
   final VoidCallback onKill;
   final VoidCallback onOpenFolder;
+  final VoidCallback onFavorite;
 
   @override
   State<_PortCard> createState() => _PortCardState();
@@ -541,6 +551,16 @@ class _CardFace extends StatelessWidget {
               ),
             ),
             _CardAction(
+              tooltip: card.isFavorite
+                  ? 'Stop watching port ${entry.port}'
+                  : 'Watch port ${entry.port}',
+              icon: card.isFavorite
+                  ? Icons.star_rounded
+                  : Icons.star_outline_rounded,
+              color: card.isFavorite ? Neon.yellow : dim,
+              onPressed: card.onFavorite,
+            ),
+            _CardAction(
               tooltip: folder == null ? 'No folder known' : 'Open folder',
               icon: Icons.folder_open_rounded,
               color: Neon.cyan,
@@ -702,7 +722,7 @@ class _Line extends StatelessWidget {
   }
 }
 
-/// An icon button with a fixed footprint, so two always fit a card's corner
+/// An icon button with a fixed footprint, so three always fit a card's corner
 /// whatever tap-target padding the platform would otherwise add.
 class _CardAction extends StatelessWidget {
   const _CardAction({
