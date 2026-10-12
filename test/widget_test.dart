@@ -240,6 +240,29 @@ void main() {
     expect(find.textContaining('vite.js'), findsNothing);
   });
 
+  testWidgets("a path in a card's details can be copied", (tester) async {
+    final copied = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') copied.add((call.arguments as Map)['text'] as String);
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+
+    await pumpApp(tester);
+    await tester.tap(cardPort(5173));
+    await settle(tester);
+    await tester.tap(find.byTooltip('Copy working folder'));
+    await settle(tester);
+    expect(copied, [r'C:\work\shop']);
+    expect(find.text('Copied the working folder.'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Copy command'));
+    await settle(tester);
+    expect(copied.last, r'node C:\work\shop\node_modules\vite\bin\vite.js');
+    // Only what is known has a button.
+    expect(find.byTooltip('Copy executable'), findsNothing);
+  });
+
   testWidgets('open folder asks the repository for the working folder', (tester) async {
     await pumpApp(tester);
     await tester.tap(rowAction(8000, Icons.folder_open_rounded));

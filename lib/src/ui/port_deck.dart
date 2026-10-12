@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:path/path.dart' as p;
 
 import '../models.dart';
@@ -754,27 +755,32 @@ class _CardAction extends StatelessWidget {
     required this.icon,
     required this.color,
     required this.onPressed,
+    this.size = _size,
   });
 
   final String tooltip;
   final IconData icon;
   final Color color;
   final VoidCallback? onPressed;
+  final double size;
 
   static const _size = 34.0;
 
+  /// Small enough to sit at the end of a line of text.
+  static const _compact = 24.0;
+
   @override
   Widget build(BuildContext context) => SizedBox.square(
-    dimension: _size,
+    dimension: size,
     child: IconButton(
       tooltip: tooltip,
-      icon: Icon(icon, size: 20),
+      icon: Icon(icon, size: size / 1.7),
       padding: EdgeInsets.zero,
       style: IconButton.styleFrom(
         foregroundColor: color.withValues(alpha: 0.85),
         hoverColor: color.withValues(alpha: 0.16),
         highlightColor: color.withValues(alpha: 0.24),
-        minimumSize: const Size.square(_size),
+        minimumSize: Size.square(size),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
       onPressed: onPressed,
@@ -992,9 +998,9 @@ class _Details extends StatelessWidget {
                   'Docker container ${container.name}  ·  image ${container.image}',
               ].join('  ·  '),
             ),
-          _DetailLine('Command', process.commandLine, isMono: true),
-          _DetailLine('Executable', process.exePath, isMono: true),
-          _DetailLine('Working folder', process.cwd, isMono: true),
+          _DetailLine.copyable('Command', process.commandLine),
+          _DetailLine.copyable('Executable', process.exePath),
+          _DetailLine.copyable('Working folder', process.cwd),
           if (project != null)
             _DetailLine('Project', switch (project.marker) {
               ProjectInfo.folderMarker =>
@@ -1040,14 +1046,35 @@ class _Details extends StatelessWidget {
 }
 
 class _DetailLine extends StatelessWidget {
-  const _DetailLine(this.label, this.value, {this.isMono = false});
+  const _DetailLine(this.label, this.value)
+    : isMono = false,
+      isCopyable = false;
+
+  /// A path or a command: set in the readout face, with a button at the end
+  /// of the line that puts it on the clipboard.
+  const _DetailLine.copyable(this.label, this.value)
+    : isMono = true,
+      isCopyable = true;
 
   final String label;
   final String? value;
   final bool isMono;
+  final bool isCopyable;
 
   /// The narrowest line that still has room for the value beside its label.
   static const _besideLabel = 520.0;
+
+  static const _lineHeight = 17.0;
+
+  Future<void> _copy(BuildContext context, String value) async {
+    final messenger = ScaffoldMessenger.of(context);
+    await Clipboard.setData(ClipboardData(text: value));
+    messenger
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text('Copied the ${label.toLowerCase()}.')),
+      );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1063,6 +1090,24 @@ class _DetailLine extends StatelessWidget {
       value,
       style: isMono ? style.merge(mono) : style,
     );
+    // No taller than a line of the value, so a line with a button is spaced
+    // like one without; the button itself spills a little over and under.
+    final copy = !isCopyable
+        ? null
+        : SizedBox(
+            width: _CardAction._compact,
+            height: _lineHeight,
+            child: OverflowBox(
+              maxHeight: _CardAction._compact,
+              child: _CardAction(
+                tooltip: 'Copy ${label.toLowerCase()}',
+                icon: Icons.content_copy_rounded,
+                color: scheme.onSurfaceVariant,
+                size: _CardAction._compact,
+                onPressed: () => _copy(context, value),
+              ),
+            ),
+          );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: LayoutBuilder(
@@ -1072,7 +1117,14 @@ class _DetailLine extends StatelessWidget {
           if (constraints.maxWidth < _besideLabel) {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: [name, const SizedBox(height: 1), text],
+              children: [
+                name,
+                const SizedBox(height: 1),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [Expanded(child: text), ?copy],
+                ),
+              ],
             );
           }
           return Row(
@@ -1087,6 +1139,7 @@ class _DetailLine extends StatelessWidget {
                 ),
               ),
               Expanded(child: text),
+              ?copy,
             ],
           );
         },
