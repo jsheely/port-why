@@ -1,18 +1,48 @@
 # Port Why
 
-A Windows desktop app (Flutter) that lists every open port on your machine and
-answers "what is holding that open?": the process, the framework or runtime
-behind it, the project it belongs to, and the folder it is running in.
+**What is holding that port open?**
 
-- Each port is a card, as many abreast as the window has room for, highest
-  port first; pick another order from the sort bar, and again to reverse it.
-- Filter by typing (port, project, process, folder, command line; every word
-  must match), by scope (Projects / Apps / System), and optionally include UDP.
-- Each card can open its folder in Explorer or kill the owning process.
-- Click a card for the full command line, executable, parent process and bind
-  addresses, which open in a pane under its row.
+Port Why is a Windows desktop app that lists every open port on your machine
+and tells you who owns it: the process, the framework or runtime behind it,
+the project it belongs to, and the folder it is running in. It follows ports
+into WSL and Docker too, so a relayed port shows the server or container that
+is really listening instead of `wslrelay.exe`.
 
-## Run
+![Port Why showing a grid of open ports, each with its framework, project and folder](docs/screenshot.png)
+
+<sub>The screenshots use made-up data from `tool/demo.dart`.</sub>
+
+## Features
+
+- **One card per port**, as many abreast as the window has room for. Each
+  shows the port and bind addresses, what opened it (for example **Vue** via
+  Vite on Node.js), the project and the manifest that named it, the folder,
+  the pid, and how long the port has been open.
+- **Filter by typing**: port, project, process, folder or command line; every
+  word must match. Narrow further by scope (Projects / Apps / System), and
+  include UDP if you want it.
+- **Sort** from the sort bar; pick the same order again to reverse it.
+- **Favorites** pin the ports you care about (3000, 5173 and 8080 to start
+  with) to the top bar, where one click takes you to whatever holds them.
+- **Act on a port**: open its folder in Explorer, or kill the owning process
+  (or stop the container).
+- **Live**: the list rescans every two seconds.
+
+Click a card for the evidence behind it: the full command line, executable,
+working folder, parent process and bind addresses.
+
+![A card opened to show its command line, executable, working folder and parent process](docs/details.png)
+
+| Shortcut | Does |
+| --- | --- |
+| `Ctrl+F` | Focus the filter |
+| `Esc` | Clear the filter |
+| `F5` | Rescan from scratch |
+
+## Getting started
+
+You need Windows and the [Flutter SDK](https://docs.flutter.dev/get-started/install/windows)
+with desktop support.
 
 ```
 flutter run -d windows            # development
@@ -20,7 +50,12 @@ flutter build windows --release   # build\windows\x64\runner\Release\port_why.ex
 flutter test
 ```
 
-Shortcuts: `Ctrl+F` filter, `Esc` clear the filter, `F5` rescan from scratch.
+To try the UI with made-up ports instead of your own (this is how the
+screenshots above were taken):
+
+```
+flutter run -d windows -t tool/demo.dart
+```
 
 The app icon is drawn by `tool/make_icon.ps1`, which rewrites
 `windows/runner/resources/app_icon.ico`; edit the script and re-run it to
@@ -61,6 +96,16 @@ ports the app asks each running WSL distribution what is really listening
 This only happens when a relayed port appears or changes, so ordinary polling
 never starts a WSL command. A distribution that is not running is never
 started.
+
+### Layout
+
+| Path | Holds |
+| --- | --- |
+| `lib/src/data/` | `PortRepository` and the Windows scanner (Win32 via FFI, WSL, Docker) |
+| `lib/src/detect/` | Project and framework detection |
+| `lib/src/state/` | Polling, filtering, sorting and favorites |
+| `lib/src/ui/` | The cards, control panel, title bar and theme |
+| `tool/` | The demo entry point and the icon script |
 
 ## Limits
 
