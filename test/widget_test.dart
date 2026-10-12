@@ -89,9 +89,9 @@ void main() {
 
   setUp(() => repository = FakePortRepository(sample()));
 
-  testWidgets('lists every port, highest first, with project and tech', (tester) async {
+  testWidgets('lists every port, lowest first, with project and tech', (tester) async {
     await pumpApp(tester);
-    expect(portsShown(tester), [8000, 5432, 5174, 5173, 445]);
+    expect(portsShown(tester), [445, 5173, 5174, 5432, 8000]);
     // Two cards, each showing "shop" as the project and again as the folder,
     // and the favourite it holds.
     expect(find.text('shop'), findsNWidgets(5));
@@ -109,13 +109,13 @@ void main() {
 
     await pumpApp(tester);
     // Three to a row at this width, so the fourth starts the next row.
-    expect(tester.getTopLeft(card(5432)).dy, tester.getTopLeft(card(8000)).dy);
-    expect(tester.getTopLeft(card(5173)).dy, greaterThan(tester.getTopLeft(card(8000)).dy));
-    expect(tester.getTopLeft(card(5173)).dx, tester.getTopLeft(card(8000)).dx);
+    expect(tester.getTopLeft(card(5173)).dy, tester.getTopLeft(card(445)).dy);
+    expect(tester.getTopLeft(card(5432)).dy, greaterThan(tester.getTopLeft(card(445)).dy));
+    expect(tester.getTopLeft(card(5432)).dx, tester.getTopLeft(card(445)).dx);
 
     tester.view.physicalSize = const Size(520, 900);
     await settle(tester);
-    expect(tester.getTopLeft(card(5432)).dy, greaterThan(tester.getTopLeft(card(8000)).dy));
+    expect(tester.getTopLeft(card(5173)).dy, greaterThan(tester.getTopLeft(card(445)).dy));
     expect(tester.takeException(), isNull);
   });
 
@@ -141,11 +141,11 @@ void main() {
     expect(tester.getRect(find.text('PAUSED')).bottom, lessThan(TitleBar.height));
     expect(tester.getRect(find.byTooltip('Rescan everything (F5)')).right, lessThan(424 - TitleBar.buttonsWidth));
 
-    expect(portsShown(tester), [5174, 5173]);
+    expect(portsShown(tester), [5173, 5174]);
     expect(tester.getTopLeft(cardPort(5173)).dx, tester.getTopLeft(cardPort(5174)).dx);
     await tester.sendKeyEvent(LogicalKeyboardKey.escape);
     await tester.pump();
-    expect(portsShown(tester), [8000, 5432, 5174, 5173, 445, 135]);
+    expect(portsShown(tester), [135, 445, 5173, 5174, 5432, 8000]);
     expect(find.text('1 hidden'), findsOneWidget);
 
     // A card's details put each value under its label.
@@ -157,7 +157,7 @@ void main() {
 
   testWidgets('a port that opens later joins the deck', (tester) async {
     await pumpApp(tester);
-    repository.entries = [...sample(), entry(port: 9229, pid: 4500, tech: 'Node.js', icon: 'nodedotjs')];
+    repository.entries = [...sample(), entry(port: 9229, pid: 4500, tech: 'Node.js', icon: 'nodedotjs', openedAt: DateTime.now())];
     // The next poll picks it up, and its entrance runs its course.
     await tester.pump(const Duration(seconds: 2));
     await tester.pump(const Duration(seconds: 3));
@@ -173,7 +173,7 @@ void main() {
     await tester.pump();
     // Cards are simply there, with no entrance to sit through...
     expect(tester.getSize(find.byKey(const ValueKey('tcp:8000:4200'))).height, greaterThan(100));
-    expect(tester.getTopLeft(find.text('8000')).dy, tester.getTopLeft(find.text('5174')).dy);
+    expect(tester.getTopLeft(find.text('445')).dy, tester.getTopLeft(find.text('5174')).dy);
     // ...and nothing keeps asking for frames, which this would wait on for ever.
     await tester.pumpAndSettle();
     expect(portsShown(tester), hasLength(5));
@@ -183,7 +183,7 @@ void main() {
     await pumpApp(tester);
     await tester.enterText(find.byType(TextField), 'shop');
     await tester.pump();
-    expect(portsShown(tester), [5174, 5173]);
+    expect(portsShown(tester), [5173, 5174]);
     expect(find.textContaining('Showing 2 of 5'), findsOneWidget);
 
     await tester.enterText(find.byType(TextField), 'nothing-matches-this');
@@ -203,17 +203,26 @@ void main() {
         find.textContaining(RegExp('^${scope.label}  $count\$'));
     await tester.tap(scope(ScopeFilter.projects, 3));
     await tester.pump();
-    expect(portsShown(tester), [8000, 5174, 5173]);
+    expect(portsShown(tester), [5173, 5174, 8000]);
     await tester.tap(scope(ScopeFilter.system, 1));
     await tester.pump();
     expect(portsShown(tester), [445]);
   });
 
   testWidgets('choosing a sort order re-sorts', (tester) async {
+    // Each opened an hour after the one before it.
+    final noon = DateTime(2026, 10, 11, 12);
+    repository.entries = [
+      entry(port: 5173, pid: 4100, project: 'shop', openedAt: noon),
+      entry(port: 5174, pid: 4100, project: 'shop', openedAt: noon.add(const Duration(hours: 1))),
+      entry(port: 8000, pid: 4200, project: 'api', openedAt: noon.add(const Duration(hours: 2))),
+      entry(port: 5432, pid: 4300, openedAt: noon.add(const Duration(hours: 3))),
+      entry(port: 445, pid: 4, openedAt: noon.add(const Duration(hours: 4))),
+    ];
     await pumpApp(tester);
-    await tester.tap(find.text('PORT'));
-    await tester.pump();
-    expect(portsShown(tester), [445, 5173, 5174, 5432, 8000]);
+    // Newest first until another order is chosen.
+    expect(portsShown(tester), [445, 5432, 8000, 5174, 5173]);
+    expect(find.text('OPENED').hitTestable(), findsOneWidget);
 
     // The other orders are shut away until the pointer is over the sort bar.
     expect(tester.getSize(find.text('PROJECT')).width, greaterThan(0));
@@ -223,10 +232,21 @@ void main() {
     addTearDown(mouse.removePointer);
     await mouse.moveTo(tester.getCenter(find.text('SORT')));
     await settle(tester);
+    // Opened leads them, then the port, then the project.
+    expect(tester.getTopLeft(find.text('OPENED')).dx, lessThan(tester.getTopLeft(find.text('PORT')).dx));
+    expect(tester.getTopLeft(find.text('PORT')).dx, lessThan(tester.getTopLeft(find.text('PROJECT')).dx));
+
+    await tester.tap(find.text('PORT'));
+    await tester.pump();
+    expect(portsShown(tester), [445, 5173, 5174, 5432, 8000]);
+    await tester.tap(find.text('PORT'));
+    await tester.pump();
+    expect(portsShown(tester), [8000, 5432, 5174, 5173, 445]);
+
     await tester.tap(find.text('PROJECT'));
     await tester.pump();
     // api, shop, shop, then the rows with no project.
-    expect(portsShown(tester).take(3), [8000, 5174, 5173]);
+    expect(portsShown(tester).take(3), [8000, 5173, 5174]);
   });
 
   testWidgets('a card opens to show the command line', (tester) async {
@@ -295,7 +315,7 @@ void main() {
     await settle(tester);
 
     expect(repository.killed.single.process.pid, 4100);
-    expect(portsShown(tester), [8000, 5432, 445]);
+    expect(portsShown(tester), [445, 5432, 8000]);
     expect(find.textContaining('Port 5173 is free'), findsOneWidget);
   });
 
@@ -451,6 +471,8 @@ void main() {
       await tester.pumpWidget(PortWhyApp(repository: repository, favorites: store));
       await settle(tester);
 
+      // The line slides sideways when it is longer than its share of the row.
+      await tester.ensureVisible(find.byTooltip('Watch another port'));
       await tester.tap(find.byTooltip('Watch another port'));
       await tester.pump();
       await tester.enterText(find.widgetWithText(TextField, 'port'), '5432');

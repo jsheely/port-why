@@ -1225,12 +1225,12 @@ class _SortBar extends StatefulWidget {
 
 class _SortBarState extends State<_SortBar> {
   static const _labels = {
+    SortColumn.opened: 'Opened',
     SortColumn.port: 'Port',
     SortColumn.project: 'Project',
     SortColumn.tech: 'Opened by',
     SortColumn.folder: 'Folder',
     SortColumn.pid: 'PID',
-    SortColumn.opened: 'Opened',
   };
 
   static const _sliding = Duration(milliseconds: 240);

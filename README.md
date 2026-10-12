@@ -22,7 +22,9 @@ shows the server or container that is really listening instead of
 - **Filter by typing**: port, project, process, folder or command line; every
   word must match. Narrow further by scope (Projects / Apps / System), and
   include UDP if you want it.
-- **Sort** from the sort bar; pick the same order again to reverse it.
+- **Sort** from the sort bar; pick the same order again to reverse it. The
+  most recently opened ports come first to start with, then the lowest port
+  number, then the project.
 - **Favorites** pin the ports you care about (3000, 5173 and 8080 to start
   with) to the top bar, where one click takes you to whatever holds them.
 - **Act on a port**: open its folder in the file manager, or kill the owning
@@ -153,7 +155,8 @@ publishing it, under the same rule: only when such a port appears or changes.
   macOS does not show them at all: without root, only your own processes'
   ports are listed. Run Port Why as root to see the rest.
 - macOS and Linux do not record when a port was opened, so cards there show no
-  age and sorting by "Opened" has nothing to go on.
+  age and sorting by "Opened" has nothing to go on: the list falls back to
+  port number, lowest first.
 - Only on Windows does the app draw its own title bar. macOS and Linux keep
   the system's, and fall back to their own fonts for the two Windows faces the
   design is drawn in.

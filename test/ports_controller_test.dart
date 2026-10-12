@@ -21,11 +21,33 @@ void main() {
     await controller.refresh();
   }
 
-  test('lists ports highest first by default', () async {
-    await load([entry(port: 3000), entry(port: 8080), entry(port: 443), entry(port: 5173)]);
-    expect(ports(), [8080, 5173, 3000, 443]);
-    expect(controller.sortColumn, SortColumn.port);
+  test('lists ports most recently opened first by default', () async {
+    final noon = DateTime(2026, 10, 11, 12);
+    await load([
+      entry(port: 3000, openedAt: noon.subtract(const Duration(hours: 2))),
+      entry(port: 8080),
+      entry(port: 443, openedAt: noon),
+      entry(port: 5173, openedAt: noon.subtract(const Duration(minutes: 1))),
+    ]);
+    expect(ports(), [443, 5173, 3000, 8080]);
+    expect(controller.sortColumn, SortColumn.opened);
     expect(controller.ascending, isFalse);
+  });
+
+  test('ports opened together go lowest first, then by project', () async {
+    final noon = DateTime(2026, 10, 11, 12);
+    await load([
+      entry(port: 8080, openedAt: noon),
+      entry(port: 3000, pid: 1, openedAt: noon),
+      entry(port: 3000, pid: 2, project: 'zeta', openedAt: noon),
+      entry(port: 3000, pid: 3, project: 'Alpha', openedAt: noon),
+      entry(port: 443, openedAt: noon),
+    ]);
+    expect(ports(), [443, 3000, 3000, 3000, 8080]);
+    expect(
+      [for (final e in controller.visible.where((e) => e.port == 3000)) e.project?.name],
+      ['Alpha', 'zeta', null],
+    );
   });
 
   group('filter', () {
@@ -67,12 +89,12 @@ void main() {
     test('an empty query shows everything again', () {
       controller.query = 'shop';
       controller.query = '   ';
-      expect(ports(), [8000, 5432, 5173, 445]);
+      expect(ports(), [445, 5173, 5432, 8000]);
     });
 
     test('scope narrows to a category', () {
       controller.scope = ScopeFilter.projects;
-      expect(ports(), [8000, 5173]);
+      expect(ports(), [5173, 8000]);
       controller.scope = ScopeFilter.apps;
       expect(ports(), [5432]);
       controller.scope = ScopeFilter.system;
@@ -119,7 +141,7 @@ void main() {
       expect(ports(), [1, 3, 2]);
     });
 
-    test('opened sorts most recent first', () async {
+    test('opened sorts most recent first, and oldest first when flipped', () async {
       final noon = DateTime(2026, 10, 11, 12);
       await load([
         entry(port: 1, openedAt: noon.subtract(const Duration(hours: 3))),
@@ -127,18 +149,19 @@ void main() {
         entry(port: 3),
         entry(port: 4, openedAt: noon.subtract(const Duration(minutes: 5))),
       ]);
-      controller.sortBy(SortColumn.opened);
       expect(ports(), [2, 4, 1, 3]);
+      controller.sortBy(SortColumn.opened);
+      expect(ports(), [1, 4, 2, 3]);
     });
 
-    test('ties keep the default port order', () async {
+    test('ties go lowest port first', () async {
       await load([
         entry(port: 10, tech: 'Vue'),
         entry(port: 30, tech: 'Vue'),
         entry(port: 20, tech: 'Vue'),
       ]);
       controller.sortBy(SortColumn.tech);
-      expect(ports(), [30, 20, 10]);
+      expect(ports(), [10, 20, 30]);
     });
   });
 
@@ -196,7 +219,7 @@ void main() {
       expect(ports(), [80]);
       controller.includeUdp = true;
       await controller.refresh();
-      expect(ports(), [5353, 80]);
+      expect(ports(), [80, 5353]);
       expect(repository.scans.last.includeUdp, isTrue);
     });
   });
@@ -282,10 +305,10 @@ void main() {
 
     test('filtering finds them by distribution, container, image and kind', () {
       for (final (query, expected) in [
-        ('wsl', [8080, 7000, 5433, 5432]),
-        ('docker', [5433, 5432]),
-        ('shop-postgres', [5433, 5432]),
-        ('postgres:18', [5433, 5432]),
+        ('wsl', [5432, 5433, 7000, 8080]),
+        ('docker', [5432, 5433]),
+        ('shop-postgres', [5432, 5433]),
+        ('postgres:18', [5432, 5433]),
         ('dev node', [8080]),
         ('/home/me', [8080]),
       ]) {
@@ -296,7 +319,7 @@ void main() {
 
     test('stopping a container removes every port it published', () async {
       expect(await controller.kill(row(5432)), KillResult.killed);
-      expect(ports(), [9000, 8080, 7000]);
+      expect(ports(), [7000, 8080, 9000]);
     });
   });
 

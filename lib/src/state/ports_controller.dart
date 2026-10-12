@@ -6,7 +6,7 @@ import '../data/favorites_store.dart';
 import '../data/port_repository.dart';
 import '../models.dart';
 
-enum SortColumn { port, project, tech, folder, pid, opened }
+enum SortColumn { opened, port, project, tech, folder, pid }
 
 enum ScopeFilter {
   all('All'),
@@ -56,7 +56,7 @@ class PortsController extends ChangeNotifier {
   ScopeFilter _scope = ScopeFilter.all;
   bool _includeUdp = false;
   bool _live = true;
-  SortColumn _sortColumn = SortColumn.port;
+  SortColumn _sortColumn = SortColumn.opened;
   bool _ascending = false;
 
   /// What is watched until the user says otherwise: where dev servers
@@ -212,8 +212,8 @@ class PortsController extends ChangeNotifier {
       _ascending = !_ascending;
     } else {
       _sortColumn = column;
-      // Ports and times read best newest/highest first, names A to Z.
-      _ascending = column != SortColumn.port && column != SortColumn.opened;
+      // Times read best newest first, ports lowest first and names A to Z.
+      _ascending = column != SortColumn.opened;
     }
     _recompute();
   }
@@ -313,11 +313,21 @@ class PortsController extends ChangeNotifier {
       ),
     };
     if (primary != 0) return primary;
-    // Ties fall back to the default order so the list never shuffles.
-    final byPort = b.port.compareTo(a.port);
+    // Ties fall back to the port, then the project, whichever way the sort
+    // runs, so the list never shuffles.
+    final byPort = a.port.compareTo(b.port);
     if (byPort != 0) return byPort;
+    final byProject = _byProject(a, b);
+    if (byProject != 0) return byProject;
     final byProtocol = a.protocol.index.compareTo(b.protocol.index);
     return byProtocol != 0 ? byProtocol : a.process.pid.compareTo(b.process.pid);
+  }
+
+  /// A to Z, with the rows that have no project after those that do.
+  static int _byProject(PortEntry a, PortEntry b) {
+    final x = a.project?.name, y = b.project?.name;
+    if (x == null || y == null) return x == null ? (y == null ? 0 : 1) : -1;
+    return _text(x, y);
   }
 
   int _directed(int comparison) => _ascending ? comparison : -comparison;
