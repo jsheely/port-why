@@ -14,6 +14,9 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 
 import '../../models.dart';
+import '../docker.dart';
+
+export '../docker.dart' show imageShortName, publishedPorts;
 
 /// ASCII unit separator: cannot appear in a path, name or command line.
 const _field = '\x1f';
@@ -266,27 +269,6 @@ WslReport parseWslReport(String distro, String output) {
     processes: processes,
     containers: containers,
   );
-}
-
-/// Host TCP ports from `docker ps` output such as
-/// `127.0.0.1:8123->8123/tcp, :::9000-9002->9000-9002/tcp, 9009/tcp`.
-Set<int> publishedPorts(String ports) {
-  final result = <int>{};
-  for (final match in RegExp(r':(\d+)(?:-(\d+))?->[\d-]+/tcp').allMatches(ports)) {
-    final first = int.parse(match[1]!);
-    final last = match[2] == null ? first : int.parse(match[2]!);
-    for (var port = first; port <= last && port - first < 1024; port++) {
-      result.add(port);
-    }
-  }
-  return result;
-}
-
-/// `ghcr.io/acme/api:1.2` becomes `api`.
-String imageShortName(String image) {
-  final withoutDigest = image.split('@').first;
-  final name = withoutDigest.split('/').last;
-  return name.split(':').first;
 }
 
 /// The outcome of asking every running distribution.

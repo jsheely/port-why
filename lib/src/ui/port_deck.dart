@@ -2,7 +2,6 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:path/path.dart' as p;
 
 import '../models.dart';
 import '../state/ports_controller.dart';
@@ -232,6 +231,7 @@ class _DeckRow extends StatelessWidget {
                       : _PortCard(
                           key: ValueKey(entries[slot].id),
                           entry: entries[slot],
+                          os: controller.os,
                           now: now,
                           showProtocol: controller.includeUdp,
                           isExpanded: deck.expanded.contains(entries[slot].id),
@@ -253,6 +253,7 @@ class _DeckRow extends StatelessWidget {
             _Drawer(
               key: ValueKey('details:${entry.id}'),
               entry: entry,
+              os: controller.os,
               isOpen: deck.expanded.contains(entry.id),
               // Where along the row its card sits, as a fraction.
               anchor: (slot + 0.5) / columns,
@@ -268,6 +269,7 @@ class _PortCard extends StatefulWidget {
   const _PortCard({
     super.key,
     required this.entry,
+    required this.os,
     required this.now,
     required this.showProtocol,
     required this.isExpanded,
@@ -281,6 +283,7 @@ class _PortCard extends StatefulWidget {
   });
 
   final PortEntry entry;
+  final HostOs os;
   final DateTime now;
   final bool showProtocol;
   final bool isExpanded;
@@ -486,8 +489,8 @@ class _CardFace extends StatelessWidget {
 
     // Leaf first: the end of a path is what tells two projects apart, and an
     // ellipsis would otherwise eat it.
-    final leaf = folder == null ? '' : p.windows.basename(folder);
-    final parent = folder == null ? '' : p.windows.dirname(folder);
+    final leaf = folder == null ? '' : pathContextOf(folder).basename(folder);
+    final parent = folder == null ? '' : pathContextOf(folder).dirname(folder);
     final isSplit = leaf.isNotEmpty && parent != folder;
 
     return Column(
@@ -608,9 +611,11 @@ class _CardFace extends StatelessWidget {
           secondaryStyle: readout,
           missingStyle: body.copyWith(color: dim),
           tooltip: folder == null
-              ? (process.restricted
+              ? (!process.restricted
+                    ? 'Unknown'
+                    : card.os == HostOs.windows
                     ? 'Windows hides this from non-administrators'
-                    : 'Unknown')
+                    : '${card.os.label} only shows this to root')
               : entry.folderIsExeDirectory
               ? '$folder\n(where the executable lives)'
               : folder,
@@ -793,12 +798,14 @@ class _Drawer extends StatefulWidget {
   const _Drawer({
     super.key,
     required this.entry,
+    required this.os,
     required this.isOpen,
     required this.anchor,
     required this.onClose,
   });
 
   final PortEntry entry;
+  final HostOs os;
   final bool isOpen;
 
   /// Where along the pane's top edge its card is, from 0 to 1.
@@ -869,6 +876,7 @@ class _DrawerState extends State<_Drawer> with SingleTickerProviderStateMixin {
       },
       child: _Details(
         entry: widget.entry,
+        os: widget.os,
         accent: accent,
         onClose: widget.onClose,
       ),
@@ -911,11 +919,13 @@ class _TetherPainter extends CustomPainter {
 class _Details extends StatelessWidget {
   const _Details({
     required this.entry,
+    required this.os,
     required this.accent,
     required this.onClose,
   });
 
   final PortEntry entry;
+  final HostOs os;
   final Color accent;
   final VoidCallback onClose;
 
@@ -980,20 +990,24 @@ class _Details extends StatelessWidget {
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
-                      'Windows only shows this process to administrators, so '
-                      'its folder and command line are unknown. Run Port Why '
-                      'as administrator to see them.',
+                      os == HostOs.windows
+                          ? 'Windows only shows this process to administrators, so '
+                                'its folder and command line are unknown. Run Port Why '
+                                'as administrator to see them.'
+                          : 'This port belongs to another user, and ${os.label} only '
+                                'tells root which process holds it. Run Port Why '
+                                'as root to see it.',
                       style: TextStyle(color: scheme.tertiary, fontSize: 12),
                     ),
                   ),
                 ],
               ),
             ),
-          if (process.distro case final distro?)
+          if (process.isInWsl || process.container != null)
             _DetailLine(
               'Runs in',
               [
-                'WSL distribution $distro',
+                if (process.distro case final distro?) 'WSL distribution $distro',
                 if (process.container case final container?)
                   'Docker container ${container.name}  ·  image ${container.image}',
               ].join('  ·  '),

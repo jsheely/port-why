@@ -26,7 +26,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: buildTheme(),
-        builder: (context, child) => WindowFrame(child: child!),
+        builder: (context, child) => WindowFrame(drawsButtons: true, child: child!),
         home: page,
       ),
     );

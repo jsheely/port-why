@@ -5,80 +5,10 @@ import 'package:path/path.dart' as p;
 import '../../detect/project_detector.dart';
 import '../../detect/tech_detector.dart';
 import '../../models.dart';
+import '../docker.dart';
+import '../scan.dart';
 import 'win32.dart' as win32;
 import 'wsl.dart' as wsl;
-
-/// What the scan should cover. Sent to the scanning isolate.
-class ScanRequest {
-  const ScanRequest({this.includeUdp = false, this.knownProcesses = const {}});
-
-  final bool includeUdp;
-
-  /// Keys of processes the caller already holds an insight for. Working out a
-  /// project and framework touches the disk, so it is done once per process
-  /// rather than on every poll.
-  final Set<String> knownProcesses;
-}
-
-/// The inferred, cacheable half of a row.
-class ProcessInsight {
-  const ProcessInsight({required this.tech, required this.category, this.project});
-
-  final TechInfo tech;
-  final ProjectInfo? project;
-  final PortCategory category;
-}
-
-class ScannedProcess {
-  const ScannedProcess({
-    required this.key,
-    required this.details,
-    this.insight,
-    this.isBehindRelay = false,
-    this.remember = true,
-  });
-
-  /// Identifies this process instance in this working directory, or, for a
-  /// port forwarded from WSL, the forwarding socket.
-  final String key;
-  final ProcessDetails details;
-
-  /// Null when the caller said it already knows this key.
-  final ProcessInsight? insight;
-
-  /// True when [details] describe what was found behind a relay (a process in
-  /// WSL, a container). Finding that costs a round trip into WSL, so the
-  /// caller keeps the details along with the insight instead of expecting
-  /// them again on every scan.
-  final bool isBehindRelay;
-
-  /// False when the lookup could not be completed and should be tried again.
-  final bool remember;
-}
-
-class ScannedPort {
-  const ScannedPort({
-    required this.protocol,
-    required this.port,
-    required this.addresses,
-    required this.process,
-    this.openedAt,
-  });
-
-  final Protocol protocol;
-  final int port;
-  final List<String> addresses;
-  final DateTime? openedAt;
-  final ScannedProcess process;
-
-  ScannedPort withProcess(ScannedProcess process) => ScannedPort(
-    protocol: protocol,
-    port: port,
-    addresses: addresses,
-    openedAt: openedAt,
-    process: process,
-  );
-}
 
 /// Windows processes that hold ports on behalf of something else: the WSL
 /// localhost relay, and Docker Desktop's port forwarder.
@@ -141,7 +71,7 @@ Future<List<ScannedPort>> scanMachine(ScanRequest request) async {
         key: port.process.key,
         details: details,
         insight: insights.of(owner, details),
-        isBehindRelay: true,
+        keepDetails: true,
       ),
     );
   }
@@ -168,7 +98,7 @@ class _RelayedInsights {
       project: project,
     );
     return ProcessInsight(
-      tech: _withFallbackIcon(tech, 'linux'),
+      tech: withFallbackIcon(tech, 'linux'),
       project: project?.info,
       category: project == null ? PortCategory.app : PortCategory.project,
     );
@@ -178,41 +108,18 @@ class _RelayedInsights {
     wsl.WslOwner owner,
     ProcessDetails details,
     ContainerInfo container,
-  ) {
-    // The image says what a container is. The process says more when it is a
-    // runtime we can read (node running Next.js), but nothing when it is
-    // Docker's port forwarder or was never visible.
-    final fromImage = _techs.detect(
-      pid: 0,
-      processName: wsl.imageShortName(container.image),
-    );
-    var tech = fromImage;
-    if (owner.process != null && !owner.isDockerProxy) {
-      final fromProcess = _techs.detect(
-        pid: details.pid,
-        processName: details.name,
-        commandLine: details.commandLine,
-      );
-      if (fromProcess.icon != null || fromImage.icon == null) tech = fromProcess;
-    }
-
-    final composeProject = container.composeProject;
-    return ProcessInsight(
-      tech: _withFallbackIcon(tech, 'docker'),
-      project: composeProject == null
-          ? null
-          : ProjectInfo(
-              name: composeProject,
-              root: container.directory ?? '',
-              marker: ProjectInfo.composeMarker,
-            ),
-      category: composeProject == null ? PortCategory.app : PortCategory.project,
-    );
-  }
-
-  static TechInfo _withFallbackIcon(TechInfo tech, String icon) => tech.icon != null
-      ? tech
-      : TechInfo(name: tech.name, via: tech.via, runtime: tech.runtime, icon: icon);
+  ) => containerInsight(
+    container,
+    // The process says nothing when it is Docker's port forwarder or was
+    // never visible.
+    fromProcess: owner.process != null && !owner.isDockerProxy
+        ? _techs.detect(
+            pid: details.pid,
+            processName: details.name,
+            commandLine: details.commandLine,
+          )
+        : null,
+  );
 }
 
 /// Reads every open port and everything Windows knows about its owner.
@@ -238,21 +145,11 @@ List<ScannedPort> scanWindows(ScanRequest request) {
       ScannedPort(
         protocol: protocol,
         port: port,
-        addresses: _sortedAddresses(bound),
+        addresses: sortedAddresses(bound.map((endpoint) => endpoint.address)),
         openedAt: _earliest(bound),
         process: inspector.inspect(pid),
       ),
   ];
-}
-
-List<String> _sortedAddresses(List<win32.Endpoint> bound) {
-  final addresses = {for (final endpoint in bound) endpoint.address}.toList();
-  int rank(String address) => address.contains(':') ? 1 : 0;
-  addresses.sort((a, b) {
-    final byFamily = rank(a).compareTo(rank(b));
-    return byFamily != 0 ? byFamily : a.compareTo(b);
-  });
-  return addresses;
 }
 
 DateTime? _earliest(List<win32.Endpoint> bound) {

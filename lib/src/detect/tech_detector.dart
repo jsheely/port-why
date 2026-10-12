@@ -1,7 +1,5 @@
 import 'dart:io';
 
-import 'package:path/path.dart' as p;
-
 import '../models.dart';
 import 'project_detector.dart';
 
@@ -103,6 +101,7 @@ class TechDetector {
     for (final (_, _, icon) in _programFamilies) icon,
     for (final dep in [..._rustCrates, ..._goModules]) ?dep.icon,
     'dotnet', 'blazor', 'flutter', 'dart', 'rust', 'go', 'cplusplus', 'windows',
+    'linux', 'apple', 'docker',
   };
 
   TechInfo _forRuntime(
@@ -151,7 +150,7 @@ class TechDetector {
     if (exePath == null) return null;
 
     // A .NET apphost is a native stub beside `<name>.runtimeconfig.json`.
-    if (File('${p.windows.withoutExtension(exePath)}.runtimeconfig.json').existsSync()) {
+    if (File(_runtimeConfigOf(exePath)).existsSync()) {
       final framework = _firstUsed(_dotnet.backend, project);
       if (framework != null) {
         return TechInfo(name: framework.name, runtime: '.NET', icon: framework.icon);
@@ -161,17 +160,27 @@ class TechDetector {
           : const TechInfo(name: '.NET', icon: 'dotnet');
     }
 
-    final directory = p.windows.dirname(exePath);
-    if (File(p.windows.join(directory, 'flutter_windows.dll')).existsSync()) {
-      return const TechInfo(name: 'Flutter', runtime: 'Dart', icon: 'flutter');
+    // A Flutter desktop app ships its engine beside the executable, in a
+    // place of its own on each system.
+    final path = pathContextOf(exePath);
+    final directory = path.dirname(exePath);
+    for (final engine in const [
+      ['flutter_windows.dll'],
+      ['lib', 'libflutter_linux_gtk.so'],
+      ['..', 'Frameworks', 'FlutterMacOS.framework'],
+    ]) {
+      if (FileSystemEntity.typeSync(path.joinAll([directory, ...engine])) !=
+          FileSystemEntityType.notFound) {
+        return const TechInfo(name: 'Flutter', runtime: 'Dart', icon: 'flutter');
+      }
     }
 
     // `go run` builds into a temp folder named go-build<digits>.
-    final isGoRun = exePath.toLowerCase().contains(r'\go-build');
+    final isGoRun = exePath.toLowerCase().contains(RegExp(r'[\\/]go-build'));
     if (project == null) {
       return isGoRun ? const TechInfo(name: 'Go', icon: 'go') : null;
     }
-    final builtHere = p.windows.isWithin(
+    final builtHere = path.isWithin(
       project.info.root.toLowerCase(),
       exePath.toLowerCase(),
     );
@@ -216,7 +225,7 @@ class TechDetector {
   /// True when the runtimeconfig beside [binary] pulls in the ASP.NET Core
   /// shared framework.
   static bool _isAspNet(String binary) {
-    final config = File('${p.windows.withoutExtension(binary)}.runtimeconfig.json');
+    final config = File(_runtimeConfigOf(binary));
     try {
       return config.existsSync() &&
           config.readAsStringSync().contains('Microsoft.AspNetCore.App');
@@ -225,12 +234,22 @@ class TechDetector {
     }
   }
 
+  /// `Shop.exe`, `Shop.dll` and, away from Windows, plain `Shop` all answer
+  /// to `Shop.runtimeconfig.json`.
+  static String _runtimeConfigOf(String binary) {
+    final lower = binary.toLowerCase();
+    final stem = lower.endsWith('.exe') || lower.endsWith('.dll')
+        ? binary.substring(0, binary.length - 4)
+        : binary;
+    return '$stem.runtimeconfig.json';
+  }
+
   static String? _dllOnCommandLine(String? commandLine, String? cwd) {
     if (commandLine == null) return null;
     for (final token in splitCommandLine(commandLine).skip(1)) {
       if (!token.toLowerCase().endsWith('.dll')) continue;
-      if (p.windows.isAbsolute(token)) return token;
-      return cwd == null ? null : p.windows.join(cwd, token);
+      if (pathContextOf(token).isAbsolute(token)) return token;
+      return cwd == null ? null : pathContextOf(cwd).join(cwd, token);
     }
     return null;
   }
@@ -774,6 +793,29 @@ const _programs = <String, (String, String?)>{
   'wininit': ('Windows start-up', 'windows'),
   'services': ('Service Control Manager', 'windows'),
   'spoolsv': ('Print Spooler', 'windows'),
+  // Linux and macOS themselves
+  'systemd': ('systemd', 'linux'),
+  'systemd-resolved': ('systemd DNS resolver', 'linux'),
+  'systemd-resolve': ('systemd DNS resolver', 'linux'),
+  'systemd-networkd': ('systemd network manager', 'linux'),
+  'networkmanager': ('NetworkManager', 'linux'),
+  'avahi-daemon': ('Avahi (mDNS)', 'linux'),
+  'dnsmasq': ('dnsmasq', 'linux'),
+  'cupsd': ('CUPS printing', null),
+  'cups-browsed': ('CUPS printing', null),
+  'rpcbind': ('RPC port mapper', null),
+  'chronyd': ('chrony (NTP)', null),
+  'smbd': ('Samba', null),
+  'containerd': ('containerd', 'docker'),
+  'launchd': ('launchd', 'apple'),
+  'mdnsresponder': ('mDNSResponder (Bonjour)', 'apple'),
+  'controlcenter': ('Control Center (AirPlay Receiver)', 'apple'),
+  'rapportd': ('Rapport (Handoff and Continuity)', 'apple'),
+  'sharingd': ('Sharing (AirDrop)', 'apple'),
+  'identityservicesd': ('Identity Services', 'apple'),
+  'remoted': ('Remote Service Discovery', 'apple'),
+  'ardagent': ('Remote Management', 'apple'),
+  'screensharingd': ('Screen Sharing', 'apple'),
 };
 
 /// Executable-name prefixes shared by a product's helper processes.

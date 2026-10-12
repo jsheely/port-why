@@ -253,6 +253,8 @@ const techGlyphs = <String, TechGlyph>{
   'podman': TechGlyph(SimpleIcons.podman, SimpleIconColors.podman),
   'kubernetes': TechGlyph(SimpleIcons.kubernetes, SimpleIconColors.kubernetes),
   'linux': TechGlyph(SimpleIcons.linux, SimpleIconColors.linux),
+  // Apple's own colour is black, which the dark would swallow.
+  'apple': TechGlyph(SimpleIcons.apple, Color(0xffa2aaad)),
   'qemu': TechGlyph(SimpleIcons.qemu, SimpleIconColors.qemu),
   'vmware': TechGlyph(SimpleIcons.vmware, SimpleIconColors.vmware),
   'virtualbox': TechGlyph(SimpleIcons.virtualbox, SimpleIconColors.virtualbox),

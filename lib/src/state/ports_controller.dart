@@ -68,6 +68,9 @@ class PortsController extends ChangeNotifier {
 
   bool get isSupported => _repository.isSupported;
 
+  /// The operating system the ports belong to.
+  HostOs get os => _repository.os;
+
   /// True until the first scan has come back.
   bool get isLoading => _lastUpdated == null && _error == null;
 
@@ -119,7 +122,13 @@ class PortsController extends ChangeNotifier {
   /// How many owning processes we could not look inside.
   int get restrictedProcessCount => {
     for (final entry in _entries)
-      if (entry.process.restricted && entry.process.pid > 4) entry.process.pid,
+      if (entry.process.restricted)
+        // Windows' kernel and idle pids are not processes to look inside.
+        // Elsewhere a hidden process has no pid, only an owner.
+        if (os != HostOs.windows)
+          '${entry.process.pid}:${entry.process.name}'
+        else if (entry.process.pid > 4)
+          '${entry.process.pid}',
   }.length;
 
   /// Windows processes that hold ports on behalf of others. A row still
@@ -212,11 +221,24 @@ class PortsController extends ChangeNotifier {
   /// Why [entry]'s process must not be killed from here, or null if it may be.
   String? killBlockedReason(PortEntry entry) {
     final process = entry.process;
-    // Linux pids start at 1, so none of the Windows rules below apply.
-    if (process.isInWsl) return null;
+    // A container is stopped as a whole, and a pid inside WSL is a Linux
+    // one, so none of the rules below apply to either.
+    if (process.isInWsl || process.container != null) return null;
+    final name = process.name.toLowerCase();
+    if (os != HostOs.windows) {
+      if (process.pid <= 0) {
+        return 'This belongs to another user, and only root can see which '
+            'process it is';
+      }
+      if (process.pid == 1) return '${os.label} cannot run without ${process.name}';
+      if (process.pid == ownPid) return 'This is Port Why itself';
+      if (_criticalPosixProcesses.contains(name)) {
+        return '${os.label} cannot run without ${process.name}';
+      }
+      return null;
+    }
     if (process.pid <= 4) return 'This is the Windows kernel';
     if (process.pid == ownPid) return 'This is Port Why itself';
-    final name = process.name.toLowerCase();
     if (_criticalProcesses.contains(name)) {
       return 'Windows cannot run without ${process.name}';
     }
@@ -234,6 +256,15 @@ class PortsController extends ChangeNotifier {
     'winlogon.exe',
     'services.exe',
     'lsass.exe',
+  };
+
+  static const _criticalPosixProcesses = {
+    'launchd',
+    'kernel_task',
+    'windowserver',
+    'loginwindow',
+    'systemd',
+    'init',
   };
 
   /// Other ports that would close if [entry]'s process were killed.

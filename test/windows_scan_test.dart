@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as p;
 import 'package:port_why/src/data/windows/win32.dart' as win32;
+import 'package:port_why/src/data/scan.dart';
 import 'package:port_why/src/data/windows/windows_scan.dart';
 import 'package:port_why/src/models.dart';
 

@@ -50,6 +50,11 @@ class FakePortRepository implements PortRepository {
   FakePortRepository(this.entries);
 
   List<PortEntry> entries;
+
+  /// The samples in these tests are Windows processes unless a test says
+  /// otherwise.
+  @override
+  HostOs os = HostOs.windows;
   KillResult killResult = KillResult.killed;
   bool folderExists = true;
 

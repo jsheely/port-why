@@ -5,6 +5,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:port_why/src/data/scan.dart';
 import 'package:port_why/src/data/windows/windows_scan.dart';
 import 'package:port_why/src/data/windows/wsl.dart' as wsl;
 import 'package:port_why/src/models.dart';
@@ -81,7 +82,7 @@ void main() {
     final details = process.details;
 
     // Windows says wslrelay.exe; the scan must say what is really there.
-    expect(process.isBehindRelay, isTrue);
+    expect(process.keepDetails, isTrue);
     expect(details.distro, distro);
     expect(details.name, startsWith('python'));
     expect(details.pid, greaterThan(0));
@@ -104,7 +105,7 @@ void main() {
     final again = (await find({process.key}))!;
     expect(again.process.key, process.key);
     expect(again.process.insight, isNull);
-    expect(again.process.isBehindRelay, isFalse);
+    expect(again.process.keepDetails, isFalse);
 
     // Killing checks it is still the same process...
     expect(

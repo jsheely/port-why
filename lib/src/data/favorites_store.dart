@@ -12,10 +12,27 @@ abstract interface class FavoritesStore {
 }
 
 FavoritesStore createFavoritesStore() {
-  final appData = Platform.environment['APPDATA'];
-  return appData == null
+  final folder = _settingsFolder(Platform.environment);
+  return folder == null
       ? MemoryFavoritesStore()
-      : FileFavoritesStore(p.join(appData, 'Port Why', 'favorites.json'));
+      : FileFavoritesStore(p.join(folder, 'favorites.json'));
+}
+
+/// Where each system expects an app to keep its settings.
+String? _settingsFolder(Map<String, String> environment) {
+  final home = environment['HOME'];
+  if (Platform.isWindows) {
+    final appData = environment['APPDATA'];
+    return appData == null ? null : p.join(appData, 'Port Why');
+  }
+  if (Platform.isMacOS) {
+    return home == null
+        ? null
+        : p.join(home, 'Library', 'Application Support', 'Port Why');
+  }
+  final config =
+      environment['XDG_CONFIG_HOME'] ?? (home == null ? null : p.join(home, '.config'));
+  return config == null ? null : p.join(config, 'port-why');
 }
 
 /// Forgets everything when the app closes.

@@ -124,8 +124,8 @@ class _KillDialog extends StatelessWidget {
               if (entry.category == PortCategory.system) ...[
                 const SizedBox(height: 12),
                 Text(
-                  'This is part of Windows. Killing it can break networking or '
-                  'sign you out.',
+                  'This is part of the system. Killing it can break networking '
+                  'or sign you out.',
                   style: body.copyWith(color: Neon.yellow),
                 ),
               ],

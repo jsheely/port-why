@@ -37,7 +37,8 @@ class DetectedProject {
 class ProjectDetector {
   ProjectDetector({Map<String, String>? environment})
     : _env = environment ?? Platform.environment {
-    _home = _normalize(_env['USERPROFILE']);
+    _home = _normalize(_env['USERPROFILE'] ?? _env['HOME']);
+    _homeParts = _home != null && _home.startsWith('/') ? _posixParts(_home) : null;
     _offLimits = [
       for (final key in const [
         'SystemRoot',
@@ -49,16 +50,17 @@ class ProjectDetector {
         'APPDATA',
       ])
         ?_normalize(_env[key]),
-      if (_home != null) '$_home\\appdata',
+      if (_home != null && !_home.startsWith('/')) '$_home\\appdata',
     ];
   }
 
   final Map<String, String> _env;
   late final String? _home;
+
+  /// [_home] in parts, when it is a macOS or Linux one.
+  late final List<String>? _homeParts;
   late final List<String> _offLimits;
   final _inspected = <String, _Inspection>{};
-
-  static final _path = p.windows;
 
   /// Directories that belong to a dependency, not to the project using it.
   /// A path through one of these is rewound to the directory containing it.
@@ -93,7 +95,7 @@ class ProjectDetector {
     final starts = <String>{
       ?cwd,
       ..._pathsIn(commandLine),
-      if (exePath != null) _path.dirname(exePath),
+      if (exePath != null) pathContextOf(exePath).dirname(exePath),
     };
     for (final start in starts) {
       final found = _findUp(_rewind(start));
@@ -103,7 +105,7 @@ class ProjectDetector {
     if (allowFolderName && cwd != null && _isNameworthy(cwd)) {
       return DetectedProject(
         info: ProjectInfo(
-          name: _path.basename(cwd),
+          name: pathContextOf(cwd).basename(cwd),
           root: cwd,
           marker: ProjectInfo.folderMarker,
         ),
@@ -116,11 +118,12 @@ class ProjectDetector {
   /// other folders directly under the home directory do not.
   bool _isNameworthy(String directory) {
     if (!isProjectTerritory(directory)) return false;
-    if (_linuxParts(_normalize(directory)!) case final parts?) {
-      final home = _linuxHomeDepth(parts);
+    final dir = _normalize(directory)!;
+    if (dir.startsWith('/') ? _posixParts(dir) : _wslParts(dir) case final parts?) {
+      final home = _homeDepth(parts);
       return home == 0 || parts.length > home + 1;
     }
-    return _normalize(_path.dirname(directory)) != _home;
+    return _normalize(p.windows.dirname(directory)) != _home;
   }
 
   /// False for drive roots, the home folder itself, and anywhere under Windows,
@@ -129,12 +132,15 @@ class ProjectDetector {
   /// projects, and they are full of stray manifests: every Electron app and
   /// every global npm install ships a package.json.
   ///
-  /// A folder inside a WSL distribution (`\\wsl.localhost\Ubuntu\...`) is
-  /// judged by the equivalent Linux rules.
+  /// A macOS or Linux folder is judged by the equivalent rules for those
+  /// systems, and so is one inside a WSL distribution
+  /// (`\\wsl.localhost\Ubuntu\...`).
   bool isProjectTerritory(String directory) {
     final dir = _normalize(directory);
-    if (dir == null || _path.dirname(dir) == dir) return false;
-    if (_linuxParts(dir) case final parts?) return _isLinuxProjectTerritory(parts);
+    if (dir == null) return false;
+    if (dir.startsWith('/')) return _isPosixProjectTerritory(_posixParts(dir));
+    if (p.windows.dirname(dir) == dir) return false;
+    if (_wslParts(dir) case final parts?) return _isPosixProjectTerritory(parts);
     if (dir == _home) return false;
     if (_home != null && dir.startsWith('$_home\\.')) return false;
     return !_offLimits.any((root) => dir == root || dir.startsWith('$root\\'));
@@ -142,9 +148,10 @@ class ProjectDetector {
 
   static final _wslShare = RegExp(r'^\\\\(?:wsl\.localhost|wsl\$)\\[^\\]+\\?(.*)$');
 
-  /// Top-level Linux directories that hold the system, not anyone's work.
-  /// `/opt`, `/srv` and `/mnt` are deliberately absent: projects do live there.
-  static const _linuxSystemDirs = {
+  /// Top-level macOS and Linux directories that hold the system, not anyone's
+  /// work. `/opt`, `/srv`, `/mnt` and `/Volumes` are deliberately absent:
+  /// projects do live there.
+  static const _posixSystemDirs = {
     'bin',
     'boot',
     'dev',
@@ -162,30 +169,62 @@ class ProjectDetector {
     'tmp',
     'usr',
     'var',
+    // macOS
+    'Applications',
+    'Library',
+    'System',
+    'cores',
+    'private',
   };
+
+  /// Folders in a home directory that hold installed software and its data.
+  static const _homeSystemDirs = {'Applications', 'Library', 'snap'};
+
+  /// A macOS or Linux path, already normalized, split into parts.
+  static List<String> _posixParts(String normalized) =>
+      p.posix.split(normalized).skip(1).toList();
 
   /// The path below the distribution root, split into parts, if [normalized]
   /// is inside a WSL distribution.
-  static List<String>? _linuxParts(String normalized) {
+  static List<String>? _wslParts(String normalized) {
     final match = _wslShare.firstMatch(normalized);
     if (match == null) return null;
     return match[1]!.split(r'\').where((part) => part.isNotEmpty).toList();
   }
 
-  /// How many leading parts make up a home directory: `/home/me` or `/root`.
-  static int _linuxHomeDepth(List<String> parts) => switch (parts) {
-    ['root', ...] => 1,
-    ['home', _, ...] => 2,
-    _ => 0,
-  };
+  /// How many leading parts make up a home directory: our own, or by the
+  /// usual shapes `/home/me`, `/Users/me` and `/root`.
+  int _homeDepth(List<String> parts) {
+    final own = _homeParts;
+    if (own != null && own.isNotEmpty && parts.length >= own.length) {
+      var isWithin = true;
+      for (var i = 0; i < own.length && isWithin; i++) {
+        isWithin = parts[i] == own[i];
+      }
+      if (isWithin) return own.length;
+    }
+    return switch (parts) {
+      ['root', ...] => 1,
+      ['home' || 'Users', _, ...] => 2,
+      _ => 0,
+    };
+  }
 
-  static bool _isLinuxProjectTerritory(List<String> parts) {
-    if (parts.isEmpty || parts.length == 1 && parts.first == 'home') return false;
-    if (_linuxSystemDirs.contains(parts.first)) return false;
-    final home = _linuxHomeDepth(parts);
-    if (home == 0) return true;
+  bool _isPosixProjectTerritory(List<String> parts) {
+    if (parts.isEmpty) return false;
+    final home = _homeDepth(parts);
+    if (home == 0) {
+      if (parts.length == 1 && (parts.first == 'home' || parts.first == 'Users')) {
+        return false;
+      }
+      // Homebrew keeps the packages it installs under /opt.
+      if (parts case ['opt', 'homebrew', ...]) return false;
+      return !_posixSystemDirs.contains(parts.first);
+    }
     // Not the home directory itself, nor a dot-folder inside it (~/.nvm).
-    return parts.length > home && !parts[home].startsWith('.');
+    return parts.length > home &&
+        !parts[home].startsWith('.') &&
+        !_homeSystemDirs.contains(parts[home]);
   }
 
   DetectedProject? _findUp(String start) {
@@ -198,12 +237,12 @@ class ProjectDetector {
       // A repository root is a hard boundary: whatever sits above it is a
       // different project.
       if (here.isGitRoot) break;
-      dir = _path.dirname(dir);
+      dir = pathContextOf(dir).dirname(dir);
     }
     if (firstWeak == null) return null;
     return DetectedProject(
       info: ProjectInfo(
-        name: _path.basename(firstWeak.directory),
+        name: pathContextOf(firstWeak.directory).basename(firstWeak.directory),
         root: firstWeak.directory,
         marker: firstWeak.weakMarker!,
       ),
@@ -211,9 +250,10 @@ class ProjectDetector {
   }
 
   String _rewind(String directory) {
-    final parts = _path.split(directory);
+    final path = pathContextOf(directory);
+    final parts = path.split(directory);
     final cut = parts.indexWhere((s) => _dependencyDirs.contains(s.toLowerCase()));
-    return cut <= 0 ? directory : _path.joinAll(parts.take(cut));
+    return cut <= 0 ? directory : path.joinAll(parts.take(cut));
   }
 
   /// Absolute paths mentioned on a command line, as directories.
@@ -225,10 +265,11 @@ class ProjectDetector {
       final value = token.startsWith('-') && token.contains('=')
           ? token.substring(token.indexOf('=') + 1)
           : token;
-      if (!_path.isAbsolute(value) || value.length < 4) continue;
+      // Read off this machine's disk, so by this machine's rules.
+      if (!p.isAbsolute(value) || value.length < 4) continue;
       final type = _typeOf(value);
       if (type == FileSystemEntityType.notFound) continue;
-      yield type == FileSystemEntityType.directory ? value : _path.dirname(value);
+      yield type == FileSystemEntityType.directory ? value : p.dirname(value);
       if (++yielded == 6) return;
     }
   }
@@ -242,10 +283,11 @@ class ProjectDetector {
   }
 
   _Inspection _inspect(String directory) {
+    final path = pathContextOf(directory);
     final names = <String, String>{};
     try {
       for (final entity in Directory(directory).listSync(followLinks: false)) {
-        final name = _path.basename(entity.path);
+        final name = path.basename(entity.path);
         names[name.toLowerCase()] = name;
       }
     } on FileSystemException {
@@ -253,7 +295,7 @@ class ProjectDetector {
     }
 
     String read(String lowerName) =>
-        _readText(_path.join(directory, names[lowerName]!));
+        _readText(path.join(directory, names[lowerName]!));
     DetectedProject project(
       String marker,
       String? name, {
@@ -262,7 +304,7 @@ class ProjectDetector {
     }) => DetectedProject(
       info: ProjectInfo(
         name: name == null || name.trim().isEmpty
-            ? _path.basename(directory)
+            ? path.basename(directory)
             : name.trim(),
         root: directory,
         marker: marker,
@@ -326,12 +368,12 @@ class ProjectDetector {
       final module = _first(text, r'^module\s+(\S+)');
       found = project('go.mod', module?.split('/').last, text: text);
     } else if (_withExtension(names, const ['.sln', '.slnx']) case final sln?) {
-      found = project(sln, _path.basenameWithoutExtension(sln));
+      found = project(sln, p.basenameWithoutExtension(sln));
     } else if (_withExtension(names, const ['.csproj', '.fsproj', '.vbproj'])
         case final proj?) {
       found = project(
         proj,
-        _path.basenameWithoutExtension(proj),
+        p.basenameWithoutExtension(proj),
         text: read(proj.toLowerCase()),
       );
     } else if (names.containsKey('pom.xml')) {
@@ -463,7 +505,9 @@ class ProjectDetector {
 
   static String? _normalize(String? path) {
     if (path == null || path.isEmpty) return null;
-    final normalized = _path.normalize(path).toLowerCase();
+    // Away from Windows a name's case is part of the name.
+    if (path.startsWith('/')) return p.posix.normalize(path);
+    final normalized = p.windows.normalize(path).toLowerCase();
     // Keep the separator on a drive root ("c:\") so dirname() is a fixed point.
     return normalized.length > 3 && normalized.endsWith('\\')
         ? normalized.substring(0, normalized.length - 1)
@@ -485,7 +529,7 @@ class _Inspection {
   final String? weakMarker;
 }
 
-/// Splits a Windows command line into arguments, honouring double quotes.
+/// Splits a command line into arguments, honouring double quotes.
 List<String> splitCommandLine(String commandLine) {
   final arguments = <String>[];
   final current = StringBuffer();

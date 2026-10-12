@@ -3,6 +3,7 @@ import 'dart:io' show pid;
 import 'dart:math' as math;
 import 'dart:ui' show PointerDeviceKind, lerpDouble;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -142,8 +143,12 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         '$did $who, but something is still holding port ${entry.port}.',
       KillResult.killed => '$did $who. Port ${entry.port} is free.',
       KillResult.notFound => '$who had already exited.',
-      KillResult.accessDenied =>
-        'Windows refused to end $who. Run Port Why as administrator to kill it.',
+      KillResult.accessDenied => switch (_controller.os) {
+        HostOs.windows =>
+          'Windows refused to end $who. Run Port Why as administrator to kill it.',
+        final os =>
+          '${os.label} refused to end $who. Run Port Why as root to kill it.',
+      },
       KillResult.failed => 'Could not $verb $who.',
     });
   }
@@ -155,6 +160,10 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
         const SingleActivator(LogicalKeyboardKey.keyF, control: true):
             _searchFocus.requestFocus,
         const SingleActivator(LogicalKeyboardKey.f5): _rescan,
+        // What a Mac's keyboard has in place of both.
+        const SingleActivator(LogicalKeyboardKey.keyF, meta: true):
+            _searchFocus.requestFocus,
+        const SingleActivator(LogicalKeyboardKey.keyR, meta: true): _rescan,
         const SingleActivator(LogicalKeyboardKey.escape): _clearSearch,
       },
       child: Focus(
@@ -337,9 +346,9 @@ class _ControlPanel extends StatelessWidget {
         final strip = SizedBox(
           height: TitleBar.height,
           child: Padding(
-            padding: const EdgeInsets.only(
+            padding: EdgeInsets.only(
               left: PortDeck.margin,
-              right: TitleBar.buttonsWidth + 6,
+              right: WindowFrame.buttonsWidthOf(context) + 6,
             ),
             child: Row(
               children: [
@@ -668,7 +677,8 @@ class _SearchFieldState extends State<_SearchField> {
                 constraints.maxWidth /
                         MediaQuery.textScalerOf(context).scale(1) >=
                     _roomForHint
-                ? 'Filter by port, project, process, folder…  (Ctrl+F)'
+                ? 'Filter by port, project, process, folder…  '
+                      '(${defaultTargetPlatform == TargetPlatform.macOS ? 'Cmd' : 'Ctrl'}+F)'
                 : 'Filter ports…',
             hintStyle: mono.copyWith(
               fontSize: 12.5,
@@ -1429,7 +1439,7 @@ class _Placeholder extends StatelessWidget {
     if (!controller.isSupported) {
       return message(
         Icons.desktop_windows_outlined,
-        'Port Why reads ports on Windows only, for now',
+        'Port Why cannot read ports on this system',
         color: Neon.violet,
       );
     }
@@ -1525,7 +1535,7 @@ class _ScannerPainter extends CustomPainter {
 }
 
 /// Two small panes afloat at the foot of the window: how fresh the list is,
-/// and how much of it Windows is hiding.
+/// and how much of it the system is hiding.
 class _StatusBar extends StatelessWidget {
   const _StatusBar({required this.controller, required this.boot});
 
@@ -1602,9 +1612,11 @@ class _StatusBar extends StatelessWidget {
         const SizedBox(width: 12),
         if (restricted > 0)
           Tooltip(
-            message:
-                'These belong to Windows or another user. Their folder and '
-                'command line are only visible to an administrator.',
+            message: controller.os == HostOs.windows
+                ? 'These belong to Windows or another user. Their folder and '
+                      'command line are only visible to an administrator.'
+                : 'These belong to the system or another user. Which process '
+                      'holds a port of theirs is only visible to root.',
             child: pane(
               Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1615,7 +1627,7 @@ class _StatusBar extends StatelessWidget {
                     isBrief
                         ? '$restricted hidden'
                         : '${countOf(restricted, 'process', plural: 'processes')} '
-                              'hidden from non-administrators',
+                              '${controller.os == HostOs.windows ? 'hidden from non-administrators' : 'hidden without root'}',
                     style: style,
                   ),
                 ],

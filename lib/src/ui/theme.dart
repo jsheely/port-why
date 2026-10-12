@@ -31,11 +31,28 @@ abstract final class Neon {
 const displayFont = 'Bahnschrift';
 const monoFont = 'Cascadia Mono';
 
+/// What stands in for [displayFont] elsewhere: macOS has a DIN of its own,
+/// and Linux its usual sans-serifs.
+const _displayFallback = [
+  'Segoe UI',
+  'DIN Alternate',
+  'Ubuntu',
+  'Noto Sans',
+  'DejaVu Sans',
+];
+
 /// Port numbers, paths, commands and readouts.
 const mono = TextStyle(
   fontFamily: monoFont,
-  // Windows 10 has no Cascadia.
-  fontFamilyFallback: ['Consolas'],
+  // Windows 10 has no Cascadia; nor do macOS and Linux.
+  fontFamilyFallback: [
+    'Consolas',
+    'Menlo',
+    'Ubuntu Mono',
+    'DejaVu Sans Mono',
+    'Liberation Mono',
+    'monospace',
+  ],
 );
 
 /// The small capitals that caption a readout.
@@ -98,7 +115,7 @@ ThemeData buildTheme() {
     colorScheme: scheme,
     scaffoldBackgroundColor: Neon.abyss,
     fontFamily: displayFont,
-    fontFamilyFallback: const ['Segoe UI'],
+    fontFamilyFallback: _displayFallback,
     visualDensity: VisualDensity.compact,
     textSelectionTheme: TextSelectionThemeData(
       cursorColor: Neon.cyan,

@@ -2,15 +2,16 @@
 
 **What is holding that port open?**
 
-Port Why is a Windows desktop app that lists every open port on your machine
-and tells you who owns it: the process, the framework or runtime behind it,
-the project it belongs to, and the folder it is running in. It follows ports
-into WSL and Docker too, so a relayed port shows the server or container that
-is really listening instead of `wslrelay.exe`.
+Port Why is a desktop app for Windows, macOS and Linux that lists every open
+port on your machine and tells you who owns it: the process, the framework or
+runtime behind it, the project it belongs to, and the folder it is running in.
+It follows ports into Docker too, and on Windows into WSL, so a relayed port
+shows the server or container that is really listening instead of
+`wslrelay.exe` or `docker-proxy`.
 
 ![Port Why showing a grid of open ports, each with its framework, project and folder](docs/screenshot.png)
 
-<sub>The screenshots use made-up data from `tool/demo.dart`.</sub>
+<sub>The screenshots are of Windows, with made-up data from `tool/demo.dart`.</sub>
 
 ## Features
 
@@ -24,8 +25,8 @@ is really listening instead of `wslrelay.exe`.
 - **Sort** from the sort bar; pick the same order again to reverse it.
 - **Favorites** pin the ports you care about (3000, 5173 and 8080 to start
   with) to the top bar, where one click takes you to whatever holds them.
-- **Act on a port**: open its folder in Explorer, or kill the owning process
-  (or stop the container).
+- **Act on a port**: open its folder in the file manager, or kill the owning
+  process (or stop the container).
 - **Live**: the list rescans every two seconds.
 
 Click a card for the evidence behind it: the full command line, executable,
@@ -35,18 +36,21 @@ working folder, parent process and bind addresses.
 
 | Shortcut | Does |
 | --- | --- |
-| `Ctrl+F` | Focus the filter |
+| `Ctrl+F` (`Cmd+F` on a Mac) | Focus the filter |
 | `Esc` | Clear the filter |
-| `F5` | Rescan from scratch |
+| `F5` (`Cmd+R` on a Mac) | Rescan from scratch |
 
 ## Getting started
 
-You need Windows and the [Flutter SDK](https://docs.flutter.dev/get-started/install/windows)
-with desktop support.
+You need the [Flutter SDK](https://docs.flutter.dev/get-started/install) with
+desktop support for the system you are on. Each system builds its own app, on
+that system:
 
 ```
-flutter run -d windows            # development
+flutter run                       # development, on whichever system this is
 flutter build windows --release   # build\windows\x64\runner\Release\port_why.exe
+flutter build macos --release     # build/macos/Build/Products/Release/Port Why.app
+flutter build linux --release     # build/linux/x64/release/bundle/port_why
 flutter test
 ```
 
@@ -54,17 +58,20 @@ To try the UI with made-up ports instead of your own (this is how the
 screenshots above were taken):
 
 ```
-flutter run -d windows -t tool/demo.dart
+flutter run -t tool/demo.dart
 ```
 
-The app icon is drawn by `tool/make_icon.ps1`, which rewrites
+The Windows app icon is drawn by `tool/make_icon.ps1`, which rewrites
 `windows/runner/resources/app_icon.ico`; edit the script and re-run it to
-change the icon.
+change the icon. The macOS app still carries Flutter's stock icon.
 
 ## How it works
 
-Everything is read in-process through `dart:ffi` (no `netstat` or PowerShell
-subprocesses), on a background isolate, every two seconds.
+The machine is read on a background isolate, every two seconds. How depends on
+the system.
+
+**Windows**, in-process through `dart:ffi` (no `netstat` or PowerShell
+subprocesses):
 
 | What | Where it comes from |
 | --- | --- |
@@ -72,6 +79,27 @@ subprocesses), on a background isolate, every two seconds.
 | Executable, command line, start time | `QueryFullProcessImageName`, `NtQueryInformationProcess` |
 | Working folder | the target process's PEB (`ReadProcessMemory`) |
 | Service names | the service control manager |
+
+**Linux**, straight out of `/proc`, again with no subprocesses:
+
+| What | Where it comes from |
+| --- | --- |
+| Ports, owning user | `/proc/net/tcp`, `tcp6`, `udp`, `udp6` |
+| Owning pid | whichever process's `/proc/<pid>/fd` holds the socket |
+| Executable, command line, working folder, start time | `/proc/<pid>/exe`, `cmdline`, `cwd`, `stat` |
+
+**macOS**, which has no `/proc`, by running the tools it ships with:
+
+| What | Where it comes from |
+| --- | --- |
+| Ports, owning pid | `lsof -iTCP -sTCP:LISTEN` (and `-iUDP`) |
+| Executable, start time, parent | `ps` |
+| Command line, working folder | `ps` and `lsof -d cwd`, once per process rather than on every poll |
+
+Everywhere, what the process *is* comes from the same two detectors:
+
+| What | Where it comes from |
+| --- | --- |
 | Project name | nearest manifest above the working folder: `package.json`, `pubspec.yaml`, `*.csproj`, `Cargo.toml`, `pyproject.toml`, `go.mod`, `pom.xml`, ... |
 | "Opened by" | runtime from the executable, tool from the command line, framework from the project's dependencies |
 
@@ -97,23 +125,38 @@ This only happens when a relayed port appears or changes, so ordinary polling
 never starts a WSL command. A distribution that is not running is never
 started.
 
+On macOS and Linux, Docker is asked directly. A port held by `docker-proxy`
+or by Docker Desktop (or, on Linux, by a process of another user's that
+cannot be seen) is looked up in `docker ps` and shown as the container
+publishing it, under the same rule: only when such a port appears or changes.
+
 ### Layout
 
 | Path | Holds |
 | --- | --- |
-| `lib/src/data/` | `PortRepository` and the Windows scanner (Win32 via FFI, WSL, Docker) |
+| `lib/src/data/` | `PortRepository`, what every scanner shares, and Docker |
+| `lib/src/data/windows/` | The Windows scanner (Win32 via FFI, WSL) |
+| `lib/src/data/posix/` | The macOS and Linux scanners (`lsof` and `ps`, `/proc`) |
 | `lib/src/detect/` | Project and framework detection |
 | `lib/src/state/` | Polling, filtering, sorting and favorites |
 | `lib/src/ui/` | The cards, control panel, title bar and theme |
+| `windows/`, `macos/`, `linux/` | Each system's runner: the window the app lives in |
 | `tool/` | The demo entry point and the icon script |
 
 ## Limits
 
-- Windows only. The scanner sits behind `PortRepository`, so another platform
-  needs its own implementation of that interface.
 - Without administrator rights, Windows hides the folder and command line of
   system and other users' processes, and refuses to kill them. Those cards say
   so; run Port Why as administrator to see and act on them.
+- Linux shows every port to everyone but only tells root which process holds
+  one of another user's, so those cards name the owning user and nothing more.
+  macOS does not show them at all: without root, only your own processes'
+  ports are listed. Run Port Why as root to see the rest.
+- macOS and Linux do not record when a port was opened, so cards there show no
+  age and sorting by "Opened" has nothing to go on.
+- Only on Windows does the app draw its own title bar. macOS and Linux keep
+  the system's, and fall back to their own fonts for the two Windows faces the
+  design is drawn in.
 - Project and framework names are inferred, so they can be wrong for unusual
   setups. A card's details show the evidence (command line and folder).
 - Tracing into WSL needs `ss` in the distribution (and `docker` for

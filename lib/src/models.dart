@@ -4,7 +4,33 @@
 /// isolate and sent back to the UI isolate.
 library;
 
+import 'dart:io' show Platform;
+
 import 'package:path/path.dart' as p;
+
+/// The operating system whose ports are being read.
+enum HostOs {
+  windows('Windows'),
+  macos('macOS'),
+  linux('Linux');
+
+  const HostOs(this.label);
+  final String label;
+
+  /// The one this app is running on, or null where it cannot read ports.
+  static HostOs? get current => Platform.isWindows
+      ? windows
+      : Platform.isMacOS
+      ? macos
+      : Platform.isLinux
+      ? linux
+      : null;
+}
+
+/// The rules [path] was written under. Told from the path itself rather than
+/// from where the app runs, because a Windows scan also carries Linux paths
+/// (from inside WSL).
+p.Context pathContextOf(String path) => path.startsWith('/') ? p.posix : p.windows;
 
 enum Protocol {
   tcp('TCP'),
@@ -22,7 +48,8 @@ enum PortCategory {
   /// A user application with no recognisable project.
   app,
 
-  /// Windows itself: the kernel, service hosts, and anything we cannot inspect.
+  /// The operating system itself: the kernel, service hosts and daemons, and
+  /// anything we cannot inspect.
   system,
 }
 
@@ -47,11 +74,11 @@ class ProcessDetails {
   });
 
   /// The process id, in its own pid namespace: a Linux pid when [distro] is
-  /// set. Zero when a container is known to own the port but its process is
-  /// not visible to us.
+  /// set. Zero when the process is not visible to us: a container known to
+  /// own the port, or on Linux a socket that belongs to another user.
   final int pid;
 
-  /// Image name, e.g. `node.exe`.
+  /// Image name, e.g. `node.exe`, or `node` away from Windows.
   final String name;
 
   /// Executable, command line and working directory as the process itself
@@ -90,7 +117,8 @@ class ProcessDetails {
 
   bool get isInWsl => distro != null;
 
-  String? get exeDirectory => exePath == null ? null : p.windows.dirname(exePath!);
+  String? get exeDirectory =>
+      exePath == null ? null : pathContextOf(exePath!).dirname(exePath!);
 }
 
 /// A container that owns a port, as reported by the Docker engine.
@@ -110,7 +138,7 @@ class ContainerInfo {
   /// The Docker Compose project the container was started as part of.
   final String? composeProject;
 
-  /// The Compose project's folder, as a path Windows can open.
+  /// The Compose project's folder, as a path this machine can open.
   final String? directory;
 }
 
@@ -193,7 +221,7 @@ class PortEntry {
   String get id => '${protocol.name}:$port:$ownerKey';
 
   /// Identifies what would be stopped by killing this row: a container, a
-  /// process inside a WSL distribution, or a Windows process.
+  /// process inside a WSL distribution, or a process on this machine.
   String get ownerKey {
     final container = process.container;
     if (container != null) return 'container:${container.id}';
@@ -201,11 +229,11 @@ class PortEntry {
     return distro == null ? '${process.pid}' : 'wsl:$distro:${process.pid}';
   }
 
-  /// A folder Windows can open: where the process is running, falling back to
-  /// the project root and then to where the executable lives.
+  /// A folder this machine can open: where the process is running, falling
+  /// back to the project root and then to where the executable lives.
   String? get folder {
     final candidate = process.isInWsl
-        // Linux paths mean nothing to Explorer; only the translated ones do.
+        // WSL's paths mean nothing to Explorer; only the translated ones do.
         ? process.hostCwd ?? project?.root
         : process.cwd ?? project?.root ?? process.exeDirectory;
     return candidate == null || candidate.isEmpty ? null : candidate;

@@ -1,7 +1,7 @@
 // Port Why with made-up ports, for screenshots and for trying the UI out
 // without showing what is running on this machine:
 //
-//   flutter run -d windows -t tool/demo.dart
+//   flutter run -t tool/demo.dart
 //
 // Nothing here scans, kills or opens anything real.
 import 'package:flutter/material.dart';
@@ -25,6 +25,10 @@ class DemoPortRepository implements PortRepository {
 
   @override
   bool get isSupported => true;
+
+  // The made-up machine is a Windows one, whatever this is run on.
+  @override
+  HostOs get os => HostOs.windows;
 
   @override
   Future<List<PortEntry>> scan({bool includeUdp = false, bool fresh = false}) async => [

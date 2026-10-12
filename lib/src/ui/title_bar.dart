@@ -14,10 +14,25 @@ const _window = MethodChannel('port_why/window');
 /// The strip is the page's to draw in. Whatever it puts there moves the
 /// window when dragged, as a title bar does, apart from what it wraps in a
 /// [TitleBarControl].
+///
+/// On macOS and Linux the system keeps its own title bar, buttons and all,
+/// so the strip is only the top of the page.
 class WindowFrame extends StatefulWidget {
-  const WindowFrame({super.key, required this.child});
+  const WindowFrame({super.key, required this.child, this.drawsButtons});
 
   final Widget child;
+
+  /// Whether the window's buttons are ours to draw. Left out, they are on
+  /// Windows alone, where the runner hands the title bar over.
+  final bool? drawsButtons;
+
+  /// The room the window's buttons take up at the right-hand end of the
+  /// strip, for a page to keep clear of.
+  static double buttonsWidthOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_TitleBarScope>()
+          ?.buttonsWidth ??
+      0;
 
   @override
   State<WindowFrame> createState() => _WindowFrameState();
@@ -30,6 +45,9 @@ class _WindowFrameState extends State<WindowFrame> {
   /// Their edges as the runner last heard them.
   List<double>? _reported;
 
+  bool get _drawsButtons =>
+      widget.drawsButtons ?? defaultTargetPlatform == TargetPlatform.windows;
+
   @override
   void initState() {
     super.initState();
@@ -41,6 +59,8 @@ class _WindowFrameState extends State<WindowFrame> {
   void _report(Duration _) {
     if (!mounted) return;
     WidgetsBinding.instance.addPostFrameCallback(_report);
+    // A title bar the system draws is the system's to hit-test.
+    if (!_drawsButtons) return;
 
     final edges = <double>[];
     for (final control in _controls) {
@@ -65,7 +85,7 @@ class _WindowFrameState extends State<WindowFrame> {
         Float64List.fromList(edges),
       );
     } on MissingPluginException {
-      // No runner to tell: a test, or not Windows.
+      // No runner to tell: a test.
     }
   }
 
@@ -74,6 +94,7 @@ class _WindowFrameState extends State<WindowFrame> {
     final media = MediaQuery.of(context);
     return _TitleBarScope(
       controls: _controls,
+      buttonsWidth: _drawsButtons ? TitleBar.buttonsWidth : 0,
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -87,12 +108,13 @@ class _WindowFrameState extends State<WindowFrame> {
           ),
           // Above the navigator, so the window can still be closed from
           // behind a dialog.
-          const Positioned(
-            top: 0,
-            right: 0,
-            height: TitleBar.height,
-            child: TitleBar(),
-          ),
+          if (_drawsButtons)
+            const Positioned(
+              top: 0,
+              right: 0,
+              height: TitleBar.height,
+              child: TitleBar(),
+            ),
         ],
       ),
     );
@@ -100,12 +122,17 @@ class _WindowFrameState extends State<WindowFrame> {
 }
 
 class _TitleBarScope extends InheritedWidget {
-  const _TitleBarScope({required this.controls, required super.child});
+  const _TitleBarScope({
+    required this.controls,
+    required this.buttonsWidth,
+    required super.child,
+  });
 
   final Set<BuildContext> controls;
+  final double buttonsWidth;
 
   @override
-  bool updateShouldNotify(_TitleBarScope old) => false;
+  bool updateShouldNotify(_TitleBarScope old) => old.buttonsWidth != buttonsWidth;
 }
 
 /// Something in the title bar that is clicked rather than dragged: Windows
@@ -155,7 +182,8 @@ class TitleBar extends StatefulWidget {
   static const height = 52.0;
   static const buttonWidth = 46.0;
 
-  /// The room the buttons take up, for a page to keep clear of.
+  /// The room the buttons take up. A page asks [WindowFrame.buttonsWidthOf]
+  /// how much of that to keep clear of.
   static const buttonsWidth = 3 * buttonWidth;
 
   @override

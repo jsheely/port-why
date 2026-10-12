@@ -49,7 +49,10 @@ void main() {
 
   Future<void> pumpApp(WidgetTester tester) async {
     openWindow(tester);
-    await tester.pumpWidget(PortWhyApp(repository: repository));
+    // The window as Windows has it, with the app drawing its buttons.
+    await tester.pumpWidget(
+      PortWhyApp(repository: repository, drawsWindowButtons: true),
+    );
     await settle(tester);
   }
 
