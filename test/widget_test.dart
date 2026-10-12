@@ -7,6 +7,7 @@ import 'package:port_why/src/data/favorites_store.dart';
 import 'package:port_why/src/models.dart';
 import 'package:port_why/src/state/ports_controller.dart';
 import 'package:port_why/src/ui/tech_icon.dart';
+import 'package:port_why/src/ui/title_bar.dart';
 
 import 'support.dart';
 
@@ -112,6 +113,42 @@ void main() {
     tester.view.physicalSize = const Size(520, 900);
     await settle(tester);
     expect(tester.getTopLeft(card(5432)).dy, greaterThan(tester.getTopLeft(card(8000)).dy));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a narrow window is one column of cards, with the search on a line of its own', (tester) async {
+    repository.entries = [...sample(), entry(port: 135, pid: 1200, name: 'svchost.exe', tech: 'Windows service', category: PortCategory.system, restricted: true)];
+    await pumpApp(tester);
+    expect(tester.getRect(find.byType(TextField)).bottom, lessThan(TitleBar.height));
+    await tester.enterText(find.byType(TextField), 'shop');
+    await tester.tap(find.text('LIVE'));
+    await tester.pump();
+
+    // As narrow as the runner lets the window go.
+    tester.view.physicalSize = const Size(424, 1200);
+    await settle(tester);
+    expect(tester.takeException(), isNull);
+    // The search kept what was typed in it, and now runs the window's width
+    // under the title bar.
+    final search = tester.getRect(find.byType(TextField));
+    expect(tester.widget<TextField>(find.byType(TextField)).controller!.text, 'shop');
+    expect(search.top, greaterThanOrEqualTo(TitleBar.height));
+    expect(search.width, greaterThan(380));
+    // The switches are still beside the window's buttons.
+    expect(tester.getRect(find.text('PAUSED')).bottom, lessThan(TitleBar.height));
+    expect(tester.getRect(find.byTooltip('Rescan everything (F5)')).right, lessThan(424 - TitleBar.buttonsWidth));
+
+    expect(portsShown(tester), [5174, 5173]);
+    expect(tester.getTopLeft(cardPort(5173)).dx, tester.getTopLeft(cardPort(5174)).dx);
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
+    expect(portsShown(tester), [8000, 5432, 5174, 5173, 445, 135]);
+    expect(find.text('1 hidden'), findsOneWidget);
+
+    // A card's details put each value under its label.
+    await tester.tap(cardPort(8000));
+    await settle(tester);
+    expect(tester.getTopLeft(find.text(r'C:\work\api')).dy, greaterThan(tester.getBottomLeft(find.text('WORKING FOLDER')).dy - 1));
     expect(tester.takeException(), isNull);
   });
 

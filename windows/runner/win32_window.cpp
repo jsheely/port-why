@@ -274,10 +274,11 @@ Win32Window::MessageHandler(HWND hwnd,
       return 0;
     }
     case WM_GETMINMAXINFO: {
-      // Below this the filter bar and table columns no longer fit.
+      // Down to a single column of cards. Any narrower and the title bar's
+      // switches no longer fit beside the window's buttons.
       auto info = reinterpret_cast<MINMAXINFO*>(lparam);
       double scale_factor = GetDpiForWindow(hwnd) / 96.0;
-      info->ptMinTrackSize.x = Scale(760, scale_factor);
+      info->ptMinTrackSize.x = Scale(440, scale_factor);
       info->ptMinTrackSize.y = Scale(420, scale_factor);
       return 0;
     }

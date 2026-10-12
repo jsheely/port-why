@@ -36,6 +36,9 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
   );
   final _search = TextEditingController();
   final _searchFocus = FocusNode();
+
+  /// Keeps the search box itself as it moves in and out of the title bar.
+  final _searchKey = GlobalKey();
   final _expanded = <String>{};
 
   /// The panels taking shape when the window opens.
@@ -183,6 +186,7 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
                         header: _ControlPanel(
                           controller: _controller,
                           search: _search,
+                          searchKey: _searchKey,
                           searchFocus: _searchFocus,
                           boot: _boot,
                           spin: _spin,
@@ -220,10 +224,14 @@ class _HomePageState extends State<HomePage> with TickerProviderStateMixin {
 /// The first hangs from the top of the window as its title bar: what the app
 /// is, the search and the switches, beside the window's own buttons. The
 /// second floats under it: the favorites, the sort order and the scope.
+///
+/// In a narrow window both fold up: the search drops to a line of its own
+/// under the title bar, and the scope to one under the favorites.
 class _ControlPanel extends StatelessWidget {
   const _ControlPanel({
     required this.controller,
     required this.search,
+    required this.searchKey,
     required this.searchFocus,
     required this.boot,
     required this.spin,
@@ -234,6 +242,7 @@ class _ControlPanel extends StatelessWidget {
 
   final PortsController controller;
   final TextEditingController search;
+  final Key searchKey;
   final FocusNode searchFocus;
   final Animation<double> boot;
   final Animation<double> spin;
@@ -247,6 +256,11 @@ class _ControlPanel extends StatelessWidget {
   static const _withCounts = 1000.0;
   static const _withName = 860.0;
 
+  /// Narrower than this and the search has a line to itself under the title
+  /// bar, which gives the name its room back for as long as that lasts.
+  static const _withSearch = 720.0;
+  static const _withNameAlone = 580.0;
+
   /// The search stops growing here, so that a wide window keeps some bare
   /// title bar to be dragged by.
   static const _widestSearch = 640.0;
@@ -258,6 +272,7 @@ class _ControlPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final field = _SearchField(
+      key: searchKey,
       controller: search,
       focusNode: searchFocus,
       hasQuery: controller.query.isNotEmpty,
@@ -303,11 +318,23 @@ class _ControlPanel extends StatelessWidget {
       child: child,
     );
 
+    final switches = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TitleBarControl(child: udp),
+        const SizedBox(width: 8),
+        TitleBarControl(child: live),
+        const SizedBox(width: 2),
+        TitleBarControl(child: rescan),
+      ],
+    );
+
     final bar = LayoutBuilder(
       builder: (context, constraints) {
         final width =
             constraints.maxWidth / MediaQuery.textScalerOf(context).scale(1);
-        return SizedBox(
+        final hasSearch = width >= _withSearch;
+        final strip = SizedBox(
           height: TitleBar.height,
           child: Padding(
             padding: const EdgeInsets.only(
@@ -318,29 +345,53 @@ class _ControlPanel extends StatelessWidget {
               children: [
                 _Brand(
                   controller: controller,
-                  showsName: width >= _withName,
+                  showsName: width >= (hasSearch ? _withName : _withNameAlone),
                   showsCounts: width >= _withCounts,
                 ),
                 const SizedBox(width: 18),
-                Expanded(
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(
-                        maxWidth: _widestSearch,
+                if (hasSearch) ...[
+                  Expanded(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(
+                          maxWidth: _widestSearch,
+                        ),
+                        child: TitleBarControl(child: field),
                       ),
-                      child: TitleBarControl(child: field),
                     ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                TitleBarControl(child: udp),
-                const SizedBox(width: 8),
-                TitleBarControl(child: live),
-                const SizedBox(width: 2),
-                TitleBarControl(child: rescan),
+                  const SizedBox(width: 10),
+                  switches,
+                ] else
+                  // Shrunk rather than cut off, should large text leave the
+                  // switches no room beside the window's buttons.
+                  Expanded(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      alignment: Alignment.centerRight,
+                      child: switches,
+                    ),
+                  ),
               ],
             ),
           ),
+        );
+        if (hasSearch) return strip;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            strip,
+            Padding(
+              padding: const EdgeInsets.fromLTRB(
+                PortDeck.margin,
+                0,
+                PortDeck.margin,
+                10,
+              ),
+              child: field,
+            ),
+          ],
         );
       },
     );
@@ -533,6 +584,7 @@ class _Brand extends StatelessWidget {
 /// the keyboard.
 class _SearchField extends StatefulWidget {
   const _SearchField({
+    super.key,
     required this.controller,
     required this.focusNode,
     required this.hasQuery,
@@ -551,6 +603,10 @@ class _SearchField extends StatefulWidget {
 }
 
 class _SearchFieldState extends State<_SearchField> {
+  /// A box narrower than this says less about what it filters by, rather
+  /// than trail off part of the way through saying it.
+  static const _roomForHint = 480.0;
+
   @override
   void initState() {
     super.initState();
@@ -592,48 +648,55 @@ class _SearchFieldState extends State<_SearchField> {
           ),
         ],
       ),
-      child: TextField(
-        controller: widget.controller,
-        focusNode: widget.focusNode,
-        onChanged: widget.onChanged,
-        style: mono.copyWith(fontSize: 13, color: scheme.onSurface),
-        // A terminal's block caret.
-        cursorWidth: 7,
-        cursorRadius: Radius.zero,
-        cursorColor: Neon.cyan.withValues(alpha: 0.75),
-        decoration: InputDecoration(
-          isDense: true,
-          border: InputBorder.none,
-          // Lower than the middle: the line leaves more room over its
-          // capitals than under them, and the icons sit on its middle.
-          contentPadding: const EdgeInsets.only(top: 11, bottom: 5),
-          hintText: 'Filter by port, project, process, folder…  (Ctrl+F)',
-          hintStyle: mono.copyWith(
-            fontSize: 12.5,
-            color: dim.withValues(alpha: 0.75),
+      child: LayoutBuilder(
+        builder: (context, constraints) => TextField(
+          controller: widget.controller,
+          focusNode: widget.focusNode,
+          onChanged: widget.onChanged,
+          style: mono.copyWith(fontSize: 13, color: scheme.onSurface),
+          // A terminal's block caret.
+          cursorWidth: 7,
+          cursorRadius: Radius.zero,
+          cursorColor: Neon.cyan.withValues(alpha: 0.75),
+          decoration: InputDecoration(
+            isDense: true,
+            border: InputBorder.none,
+            // Lower than the middle: the line leaves more room over its
+            // capitals than under them, and the icons sit on its middle.
+            contentPadding: const EdgeInsets.only(top: 11, bottom: 5),
+            hintText:
+                constraints.maxWidth /
+                        MediaQuery.textScalerOf(context).scale(1) >=
+                    _roomForHint
+                ? 'Filter by port, project, process, folder…  (Ctrl+F)'
+                : 'Filter ports…',
+            hintStyle: mono.copyWith(
+              fontSize: 12.5,
+              color: dim.withValues(alpha: 0.75),
+            ),
+            prefixIcon: Icon(
+              Icons.search_rounded,
+              size: 19,
+              color: isFocused ? Neon.cyan : dim,
+            ),
+            prefixIconConstraints: iconBox,
+            suffixIcon: widget.hasQuery
+                ? IconButton(
+                    tooltip: 'Clear filter (Esc)',
+                    icon: const Icon(Icons.close_rounded, size: 17),
+                    color: dim,
+                    // No taller than the field, or the field grows to hold
+                    // it and leaves the text at the top.
+                    padding: EdgeInsets.zero,
+                    constraints: iconBox,
+                    style: IconButton.styleFrom(
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    onPressed: widget.onClear,
+                  )
+                : null,
+            suffixIconConstraints: iconBox,
           ),
-          prefixIcon: Icon(
-            Icons.search_rounded,
-            size: 19,
-            color: isFocused ? Neon.cyan : dim,
-          ),
-          prefixIconConstraints: iconBox,
-          suffixIcon: widget.hasQuery
-              ? IconButton(
-                  tooltip: 'Clear filter (Esc)',
-                  icon: const Icon(Icons.close_rounded, size: 17),
-                  color: dim,
-                  // No taller than the field, or the field grows to hold
-                  // it and leaves the text at the top.
-                  padding: EdgeInsets.zero,
-                  constraints: iconBox,
-                  style: IconButton.styleFrom(
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  onPressed: widget.onClear,
-                )
-              : null,
-          suffixIconConstraints: iconBox,
         ),
       ),
     );
@@ -1471,8 +1534,16 @@ class _StatusBar extends StatelessWidget {
 
   static const height = 30.0;
 
+  /// Narrower than this and the second pane only counts what is hidden,
+  /// leaving it to its tooltip to say from whom.
+  static const _inFull = 640.0;
+
   @override
   Widget build(BuildContext context) {
+    final isBrief =
+        MediaQuery.sizeOf(context).width /
+            MediaQuery.textScalerOf(context).scale(1) <
+        _inFull;
     final dim = Theme.of(context).colorScheme.onSurfaceVariant;
     final style = mono.copyWith(fontSize: 11, color: dim);
     final updated = controller.lastUpdated;
@@ -1541,8 +1612,10 @@ class _StatusBar extends StatelessWidget {
                   Icon(Icons.lock_outline_rounded, size: 13, color: Neon.yellow),
                   const SizedBox(width: 6),
                   Text(
-                    '${countOf(restricted, 'process', plural: 'processes')} '
-                    'hidden from non-administrators',
+                    isBrief
+                        ? '$restricted hidden'
+                        : '${countOf(restricted, 'process', plural: 'processes')} '
+                              'hidden from non-administrators',
                     style: style,
                   ),
                 ],

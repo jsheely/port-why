@@ -529,23 +529,16 @@ class _CardFace extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 3),
-                  Row(
-                    children: [
-                      ConstrainedBox(
-                        constraints: const BoxConstraints(maxWidth: 170),
-                        child: _Clipped(
-                          entry.tech.name,
-                          style: body.copyWith(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
+                  _Pair(
+                    widest: 170,
+                    name: _Clipped(
+                      entry.tech.name,
+                      style: body.copyWith(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: _Clipped(_techSubtitle(entry), style: faint),
-                      ),
-                    ],
+                    ),
+                    note: _Clipped(_techSubtitle(entry), style: faint),
                   ),
                 ],
               ),
@@ -684,24 +677,16 @@ class _Line extends StatelessWidget {
   Widget build(BuildContext context) {
     final primary = this.primary;
     final secondary = this.secondary;
-    Widget label = Row(
-      crossAxisAlignment: CrossAxisAlignment.baseline,
-      textBaseline: TextBaseline.alphabetic,
-      children: [
-        if (primary == null)
-          Text('—', style: missingStyle)
-        else if (secondary == null)
-          Flexible(child: _Clipped(primary, style: primaryStyle))
-        else ...[
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 190),
-            child: _Clipped(primary, style: primaryStyle),
-          ),
-          const SizedBox(width: 8),
-          Flexible(child: _Clipped(secondary, style: secondaryStyle)),
-        ],
-      ],
-    );
+    Widget label = primary == null
+        ? Text('—', style: missingStyle)
+        : secondary == null
+        ? _Clipped(primary, style: primaryStyle)
+        : _Pair(
+            widest: 190,
+            onBaseline: true,
+            name: _Clipped(primary, style: primaryStyle),
+            note: _Clipped(secondary, style: secondaryStyle),
+          );
     if (tooltip case final tooltip?) {
       label = Tooltip(message: tooltip, child: label);
     }
@@ -720,6 +705,45 @@ class _Line extends StatelessWidget {
       ),
     );
   }
+}
+
+/// A name and, after it on the same line, a quieter note. The name has as
+/// much of the line as it needs up to [widest], short of crowding the note
+/// off a narrow card altogether.
+class _Pair extends StatelessWidget {
+  const _Pair({
+    required this.name,
+    required this.note,
+    required this.widest,
+    this.onBaseline = false,
+  });
+
+  final Widget name;
+  final Widget note;
+  final double widest;
+
+  /// Whether the two sit on one baseline rather than about one middle.
+  final bool onBaseline;
+
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) => Row(
+      crossAxisAlignment: onBaseline
+          ? CrossAxisAlignment.baseline
+          : CrossAxisAlignment.center,
+      textBaseline: TextBaseline.alphabetic,
+      children: [
+        ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: math.min(widest, constraints.maxWidth * 0.6),
+          ),
+          child: name,
+        ),
+        const SizedBox(width: 8),
+        Flexible(child: note),
+      ],
+    ),
+  );
 }
 
 /// An icon button with a fixed footprint, so three always fit a card's corner
@@ -1022,35 +1046,50 @@ class _DetailLine extends StatelessWidget {
   final String? value;
   final bool isMono;
 
+  /// The narrowest line that still has room for the value beside its label.
+  static const _besideLabel = 520.0;
+
   @override
   Widget build(BuildContext context) {
     final value = this.value;
     if (value == null || value.isEmpty) return const SizedBox.shrink();
     final scheme = Theme.of(context).colorScheme;
     final style = TextStyle(fontSize: 12, height: 1.4, color: scheme.onSurface);
+    final name = Text(
+      label.toUpperCase(),
+      style: caption.copyWith(color: scheme.onSurfaceVariant),
+    );
+    final text = SelectableText(
+      value,
+      style: isMono ? style.merge(mono) : style,
+    );
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 128,
-            child: Padding(
-              // Sits the small capitals on the value's first baseline.
-              padding: const EdgeInsets.only(top: 2.5),
-              child: Text(
-                label.toUpperCase(),
-                style: caption.copyWith(color: scheme.onSurfaceVariant),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          // Under a single column of cards, a column for the labels would
+          // leave a command line a few words to the line.
+          if (constraints.maxWidth < _besideLabel) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [name, const SizedBox(height: 1), text],
+            );
+          }
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 128,
+                child: Padding(
+                  // Sits the small capitals on the value's first baseline.
+                  padding: const EdgeInsets.only(top: 2.5),
+                  child: name,
+                ),
               ),
-            ),
-          ),
-          Expanded(
-            child: SelectableText(
-              value,
-              style: isMono ? style.merge(mono) : style,
-            ),
-          ),
-        ],
+              Expanded(child: text),
+            ],
+          );
+        },
       ),
     );
   }
