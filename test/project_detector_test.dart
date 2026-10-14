@@ -127,13 +127,15 @@ void main() {
       expect(detector.detect(cwd: box.dir('home')), isNull);
     });
 
+    // AppData is a Windows folder; macOS and Linux keep the same things in
+    // ~/Library and dot-folders, which are off limits there.
     test('not under AppData, where Electron apps keep a package.json', () {
       box.file('home/AppData/Local/Programs/Editor/package.json', '{"name": "editor"}');
       expect(
         detector.detect(cwd: box.dir('home/AppData/Local/Programs/Editor')),
         isNull,
       );
-    });
+    }, testOn: 'windows');
 
     test('not in a tool cache such as a global install under ~/.bun', () {
       box.file('home/.bun/install/global/package.json', '{"name": "global"}');
