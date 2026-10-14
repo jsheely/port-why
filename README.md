@@ -42,6 +42,25 @@ working folder, parent process and bind addresses.
 | `Esc` | Clear the filter |
 | `F5` (`Cmd+R` on a Mac) | Rescan from scratch |
 
+## Download
+
+Each [release](https://github.com/jsheely/port-why/releases) has a build for
+every system and processor:
+
+| System | File |
+| --- | --- |
+| Windows on Intel or AMD | `port-why-<version>-windows-x64.zip` |
+| Windows on Arm | `port-why-<version>-windows-arm64.zip` |
+| macOS, Apple silicon and Intel | `port-why-<version>-macos-universal.zip` |
+| Linux on Intel or AMD | `port-why-<version>-linux-x64.tar.gz` |
+| Linux on Arm | `port-why-<version>-linux-arm64.tar.gz` |
+
+Unpack it and run `port_why.exe`, `Port Why.app` or `port_why` (which needs
+GTK 3). The builds are not signed, so the first time you open one, Windows
+SmartScreen asks first (choose **More info**, then **Run anyway**), and macOS
+refuses until you choose **Open Anyway** in System Settings > Privacy &
+Security, or run `xattr -dr com.apple.quarantine "Port Why.app"`.
+
 ## Getting started
 
 You need the [Flutter SDK](https://docs.flutter.dev/get-started/install) with
@@ -66,6 +85,23 @@ flutter run -t tool/demo.dart
 The Windows app icon is drawn by `tool/make_icon.ps1`, which rewrites
 `windows/runner/resources/app_icon.ico`; edit the script and re-run it to
 change the icon. The macOS app still carries Flutter's stock icon.
+
+### Releasing
+
+Pushing a version tag builds every download above and publishes them as the
+release of that version:
+
+```
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+The tag sets the version the app is built as, whatever `pubspec.yaml` says.
+`.github/workflows/release.yml` builds each system on a GitHub runner of the
+same kind, so each processor gets a native build rather than a cross-compiled
+one. It runs the tests there first, and checks each binary is for the
+processor its file name says. Run the workflow by hand from the Actions tab to
+build without releasing: the archives are attached to that run instead.
 
 ## How it works
 
@@ -144,6 +180,7 @@ publishing it, under the same rule: only when such a port appears or changes.
 | `lib/src/ui/` | The cards, control panel, title bar and theme |
 | `windows/`, `macos/`, `linux/` | Each system's runner: the window the app lives in |
 | `tool/` | The demo entry point and the icon script |
+| `.github/workflows/` | The release build |
 
 ## Limits
 
