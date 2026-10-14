@@ -56,7 +56,8 @@ every system and processor:
 | Linux on Arm | `port-why-<version>-linux-arm64.tar.gz` |
 
 Unpack it and run `port_why.exe`, `Port Why.app` or `port_why` (which needs
-GTK 3). The builds are not signed, so the first time you open one, Windows
+GTK 3 and glibc 2.34: Ubuntu 22.04, Debian 12, Fedora 35 or anything newer).
+The builds are not signed, so the first time you open one, Windows
 SmartScreen asks first (choose **More info**, then **Run anyway**), and macOS
 refuses until you choose **Open Anyway** in System Settings > Privacy &
 Security, or run `xattr -dr com.apple.quarantine "Port Why.app"`.
