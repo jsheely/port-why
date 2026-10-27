@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 202 386" width="202" height="386">
+  <!-- The Windows installer's sidebar, in the app's neon-over-night palette
+       (lib/src/ui/theme.dart): the icon, the wordmark as the title bar draws
+       it, and three port cards in the colours of a project, an app and a
+       system port. 202x386 is the modern wizard's sidebar at 100%; render.ps1
+       renders it to sidebar.bmp at that size and sidebar-2x.bmp at twice it,
+       with Windows' own Bahnschrift and Cascadia Mono. -->
+  <defs>
+    <linearGradient id="night" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0c0920" />
+      <stop offset="1" stop-color="#04050d" />
+    </linearGradient>
+    <radialGradient id="cyanLight" cx="0.3" cy="0.1" r="0.75">
+      <stop offset="0" stop-color="#19e3ff" stop-opacity="0.24" />
+      <stop offset="1" stop-color="#19e3ff" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="pinkLight" cx="1" cy="0.82" r="0.7">
+      <stop offset="0" stop-color="#ff2e7e" stop-opacity="0.22" />
+      <stop offset="1" stop-color="#ff2e7e" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="violetLight" cx="0" cy="0.62" r="0.6">
+      <stop offset="0" stop-color="#a573ff" stop-opacity="0.14" />
+      <stop offset="1" stop-color="#a573ff" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="floorFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#19e3ff" stop-opacity="0" />
+      <stop offset="1" stop-color="#19e3ff" stop-opacity="0.32" />
+    </linearGradient>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2.2" result="blur" />
+      <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
+    </filter>
+    <filter id="halo" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="14" />
+    </filter>
+    <clipPath id="floorClip"><rect x="0" y="292" width="202" height="94" /></clipPath>
+  </defs>
+
+  <rect width="202" height="386" fill="url(#night)" />
+  <rect width="202" height="386" fill="url(#cyanLight)" />
+  <rect width="202" height="386" fill="url(#violetLight)" />
+  <rect width="202" height="386" fill="url(#pinkLight)" />
+
+  <!-- A neon floor running to the horizon under the cards -->
+  <g clip-path="url(#floorClip)" stroke="url(#floorFade)" stroke-width="0.8" fill="none">
+    <line x1="101" y1="292" x2="-160" y2="386" />
+    <line x1="101" y1="292" x2="-60" y2="386" />
+    <line x1="101" y1="292" x2="20" y2="386" />
+    <line x1="101" y1="292" x2="101" y2="386" />
+    <line x1="101" y1="292" x2="182" y2="386" />
+    <line x1="101" y1="292" x2="262" y2="386" />
+    <line x1="101" y1="292" x2="362" y2="386" />
+    <line x1="0" y1="300" x2="202" y2="300" />
+    <line x1="0" y1="310" x2="202" y2="310" />
+    <line x1="0" y1="323" x2="202" y2="323" />
+    <line x1="0" y1="340" x2="202" y2="340" />
+    <line x1="0" y1="362" x2="202" y2="362" />
+  </g>
+
+  <!-- The icon, lit from behind -->
+  <circle cx="101" cy="68" r="30" fill="#19e3ff" opacity="0.38" filter="url(#halo)" />
+  <image x="67" y="34" width="68" height="68" xlink:href="../icons/512.png" href="../icons/512.png" />
+
+  <!-- The wordmark, as the title bar sets it -->
+  <text x="103" y="134" text-anchor="middle" font-family="Bahnschrift, 'Segoe UI', sans-serif" font-weight="700" font-size="17" letter-spacing="4" fill="#ffffff" filter="url(#glow)">PORT WHY</text>
+  <text x="101" y="150" text-anchor="middle" font-family="Bahnschrift, 'Segoe UI', sans-serif" font-weight="700" font-size="7" letter-spacing="1.4" fill="#909dc6">WHAT IS HOLDING THAT PORT?</text>
+
+  <!-- Three ports: a project, an app and the system -->
+  <g font-family="'Cascadia Mono', Consolas, monospace">
+    <rect x="20" y="172" width="162" height="34" rx="7" fill="#0a0e22" fill-opacity="0.78" stroke="#19e3ff" stroke-opacity="0.55" />
+    <text x="31" y="187" font-size="12" font-weight="700" fill="#19e3ff" filter="url(#glow)">3000</text>
+    <text x="31" y="199" font-size="7" fill="#e9f0ff" font-family="Bahnschrift, sans-serif" font-weight="600">Next.js <tspan fill="#909dc6" font-weight="400">· marketing-site</tspan></text>
+    <circle cx="170" cy="183" r="2.6" fill="#35ff9f" filter="url(#glow)" />
+
+    <rect x="20" y="214" width="162" height="34" rx="7" fill="#0a0e22" fill-opacity="0.78" stroke="#a573ff" stroke-opacity="0.55" />
+    <text x="31" y="229" font-size="12" font-weight="700" fill="#a573ff" filter="url(#glow)">11434</text>
+    <text x="31" y="241" font-size="7" fill="#e9f0ff" font-family="Bahnschrift, sans-serif" font-weight="600">Ollama <tspan fill="#909dc6" font-weight="400">· ollama.exe</tspan></text>
+    <circle cx="170" cy="225" r="2.6" fill="#35ff9f" filter="url(#glow)" />
+
+    <rect x="20" y="256" width="162" height="34" rx="7" fill="#0a0e22" fill-opacity="0.78" stroke="#fcee0a" stroke-opacity="0.5" />
+    <text x="31" y="271" font-size="12" font-weight="700" fill="#fcee0a" filter="url(#glow)">445</text>
+    <text x="31" y="283" font-size="7" fill="#e9f0ff" font-family="Bahnschrift, sans-serif" font-weight="600">Windows kernel <tspan fill="#909dc6" font-weight="400">· System</tspan></text>
+    <circle cx="170" cy="267" r="2.6" fill="#35ff9f" filter="url(#glow)" />
+  </g>
+
+  <!-- Where the sidebar meets the page -->
+  <line x1="201.5" y1="0" x2="201.5" y2="386" stroke="#232b4d" />
+
+  <text x="102" y="376" text-anchor="middle" font-family="Bahnschrift, 'Segoe UI', sans-serif" font-weight="700" font-size="7" letter-spacing="2.6" fill="#6d7aa8">THIRTYTECH</text>
+</svg>

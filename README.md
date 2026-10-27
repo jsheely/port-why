@@ -44,23 +44,41 @@ working folder, parent process and bind addresses.
 
 ## Download
 
-Each [release](https://github.com/jsheely/port-why/releases) has a build for
-every system and processor:
+Each [release](https://github.com/jsheely/port-why/releases) has an installer
+and an archive for every system and processor (`<arch>` is `x64` for Intel or
+AMD, `arm64` for Arm):
 
-| System | File |
-| --- | --- |
-| Windows on Intel or AMD | `port-why-<version>-windows-x64.zip` |
-| Windows on Arm | `port-why-<version>-windows-arm64.zip` |
-| macOS, Apple silicon and Intel | `port-why-<version>-macos-universal.zip` |
-| Linux on Intel or AMD | `port-why-<version>-linux-x64.tar.gz` |
-| Linux on Arm | `port-why-<version>-linux-arm64.tar.gz` |
+| System | Installer | Archive |
+| --- | --- | --- |
+| Windows | `port-why-<version>-windows-<arch>-setup.exe` | `port-why-<version>-windows-<arch>.zip` |
+| macOS, Apple silicon and Intel | `port-why-<version>-macos-universal.dmg` | `port-why-<version>-macos-universal.zip` |
+| Debian, Ubuntu | `port-why-<version>-linux-<arch>.deb` | `port-why-<version>-linux-<arch>.tar.gz` |
+| Fedora, RHEL, openSUSE | `port-why-<version>-linux-<arch>.rpm` | |
+| Arch Linux | `port-why-<version>-linux-<arch>.pkg.tar.zst` | |
 
-Unpack it and run `port_why.exe`, `Port Why.app` or `port_why` (which needs
-GTK 3 and glibc 2.34: Ubuntu 22.04, Debian 12, Fedora 35 or anything newer).
+- **Windows**: the installer puts Port Why in your user profile without
+  asking for administrator rights (an administrator can choose to install it
+  for everyone), adds it to the Start menu, and uninstalls from Settings >
+  Apps.
+- **macOS**: open the .dmg and drag Port Why to Applications.
+- **Linux**: install the package with `sudo apt install ./<file>.deb`,
+  `sudo dnf install ./<file>.rpm` or `sudo pacman -U <file>.pkg.tar.zst`. Or,
+  without root, install the tarball into `~/.local` with the install script
+  (`--uninstall` removes it again; `PORTWHY_PREFIX=/usr/local` with `sudo`
+  installs it for everyone):
+
+  ```
+  curl -fsSL https://github.com/jsheely/port-why/releases/latest/download/install.sh | sh
+  ```
+
+  It needs GTK 3, EGL and OpenGL ES, and glibc 2.34: Ubuntu 22.04, Debian 12,
+  Fedora 35, RHEL 9 or anything newer. The packages pull those in.
+
 The builds are not signed, so the first time you open one, Windows
 SmartScreen asks first (choose **More info**, then **Run anyway**), and macOS
 refuses until you choose **Open Anyway** in System Settings > Privacy &
-Security, or run `xattr -dr com.apple.quarantine "Port Why.app"`.
+Security, or run `xattr -dr com.apple.quarantine "/Applications/Port Why.app"`.
+Favorites are kept when you uninstall.
 
 ## Getting started
 
@@ -83,9 +101,11 @@ screenshots above were taken):
 flutter run -t tool/demo.dart
 ```
 
-The Windows app icon is drawn by `tool/make_icon.ps1`, which rewrites
-`windows/runner/resources/app_icon.ico`; edit the script and re-run it to
-change the icon. The macOS app still carries Flutter's stock icon.
+The app icon is drawn by `tool/make_icon.ps1`, which rewrites the Windows
+`.ico`, the macOS asset catalog and the PNGs in `packaging/icons`; edit the
+script and re-run it to change the icon. The installers' artwork (the Windows
+wizard's sidebar and the .dmg window's background) is drawn from SVGs in
+`packaging/` by `packaging/render.ps1`; run it again after either changes.
 
 ### Releasing
 
@@ -101,8 +121,13 @@ The tag sets the version the app is built as, whatever `pubspec.yaml` says.
 `.github/workflows/release.yml` builds each system on a GitHub runner of the
 same kind, so each processor gets a native build rather than a cross-compiled
 one. It runs the tests there first, and checks each binary is for the
-processor its file name says. Run the workflow by hand from the Actions tab to
-build without releasing: the archives are attached to that run instead.
+processor its file name says. Then the scripts in `packaging/` make each
+system's installer: `windows/package.ps1` with Inno Setup, `macos/package.sh`
+with dmgbuild, and `linux/package.sh` with nfpm. Linux builds on Ubuntu 22.04
+so it runs on Debian 12 and RHEL 9 too. Run the workflow by hand from the
+Actions tab to build without releasing: the downloads are attached to that run
+instead. To sign and notarize the .dmg, give the repository the `MACOS_*`
+secrets that `packaging/macos/package.sh` lists.
 
 ## How it works
 
@@ -181,6 +206,8 @@ publishing it, under the same rule: only when such a port appears or changes.
 | `lib/src/ui/` | The cards, control panel, title bar and theme |
 | `windows/`, `macos/`, `linux/` | Each system's runner: the window the app lives in |
 | `tool/` | The demo entry point and the icon script |
+| `packaging/` | The installers: Inno Setup on Windows, the .dmg on macOS, the Linux packages, and their artwork |
+| `install.sh` | The Linux install script, published with each release |
 | `.github/workflows/` | The release build |
 
 ## Limits

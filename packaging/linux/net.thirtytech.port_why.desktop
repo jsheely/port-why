@@ -1,0 +1,16 @@
+[Desktop Entry]
+Type=Application
+Name=Port Why
+GenericName=Port Viewer
+Comment=See which process, project and folder owns every open port
+# The file name is the app's application id (APPLICATION_ID in
+# linux/CMakeLists.txt), which GTK gives the compositor on Wayland: that is
+# how the dock finds this launcher and its icon for the open window. On X11
+# the window's class is the same id (checked with xwininfo).
+Exec=port-why
+Icon=port-why
+Terminal=false
+Categories=Development;Network;Monitor;
+Keywords=port;socket;process;listen;docker;network;
+StartupWMClass=net.thirtytech.port_why
+StartupNotify=true

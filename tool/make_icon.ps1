@@ -1,14 +1,22 @@
-# Draws the Port Why app icon and writes it as a multi-size .ico.
+# Draws the Port Why app icon and writes it everywhere it is used.
 #
-#   pwsh tool/make_icon.ps1                 # rewrites windows/runner/resources/app_icon.ico
+#   pwsh tool/make_icon.ps1                 # rewrites every icon below
 #   pwsh tool/make_icon.ps1 -Preview x.png  # also saves a sheet of every size on light and dark
 #
-# The icon is the mark from the app's header: a three-node network on a blue
-# rounded square. Each size is drawn from the same shapes rather than scaled
+# It writes:
+#
+#   windows/runner/resources/app_icon.ico           the Windows app and its installer
+#   macos/Runner/Assets.xcassets/AppIcon.appiconset the macOS app
+#   packaging/icons/<size>.png                      Linux's icon theme and the installers' artwork
+#
+# The icon is the mark from the app's header: a three-node network in neon
+# cyan on a night-dark tile inside a cyan, violet and pink rim. Each size is drawn from the same shapes rather than scaled
 # down from the largest, so the small taskbar sizes can use heavier strokes and
 # fill the whole canvas.
 param(
   [string]$Out = (Join-Path $PSScriptRoot '..\windows\runner\resources\app_icon.ico'),
+  [string]$MacIcons = (Join-Path $PSScriptRoot '..\macos\Runner\Assets.xcassets\AppIcon.appiconset'),
+  [string]$PngIcons = (Join-Path $PSScriptRoot '..\packaging\icons'),
   [string]$Preview
 )
 
@@ -28,9 +36,12 @@ function New-RoundedRect([single]$x, [single]$y, [single]$w, [single]$h, [single
   $path
 }
 
-function New-IconBitmap([int]$size) {
+# -Margin is the air around the tile, as a fraction of the canvas. macOS wants
+# more than Windows: its icons sit on a 1024 grid whose tile is 824 across.
+function New-IconBitmap([int]$size, [double]$margin = 0.055) {
   # Draw oversized and reduce, which gives cleaner edges than GDI+ antialiasing alone.
-  $oversample = 4
+  # The largest sizes have pixels enough already.
+  $oversample = if ($size -ge 512) { 2 } else { 4 }
   $canvas = $size * $oversample
   $big = New-Object System.Drawing.Bitmap $canvas, $canvas, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
   $g = [System.Drawing.Graphics]::FromImage($big)
@@ -40,26 +51,41 @@ function New-IconBitmap([int]$size) {
 
   $small = $size -le 24
   # Large sizes keep a little air around the tile; small ones cannot spare it.
-  $inset = if ($small) { 0 } else { 0.055 * $canvas }
+  $inset = if ($small) { 0 } else { $margin * $canvas }
   $u = $canvas - 2 * $inset   # the tile's edge; every measure below is a fraction of it
 
-  $tile = New-RoundedRect $inset $inset $u $u (0.225 * $u)
+  # The neon rim: the header mark's cyan, violet and pink, corner to corner.
+  $radius = 0.225 * $u
+  $tile = New-RoundedRect $inset $inset $u $u $radius
   $bounds = New-Object System.Drawing.RectangleF $inset, $inset, $u, $u
-  $fill = New-Object System.Drawing.Drawing2D.LinearGradientBrush $bounds, `
-    ([System.Drawing.Color]::FromArgb(255, 94, 150, 255)), `
-    ([System.Drawing.Color]::FromArgb(255, 40, 86, 214)), 55.0
-  $g.FillPath($fill, $tile)
+  $rimFill = New-Object System.Drawing.Drawing2D.LinearGradientBrush $bounds, `
+    ([System.Drawing.Color]::Black), ([System.Drawing.Color]::Black), 45.0
+  $blend = New-Object System.Drawing.Drawing2D.ColorBlend 3
+  $blend.Colors = [System.Drawing.Color[]]@(
+    [System.Drawing.Color]::FromArgb(255, 0x19, 0xe3, 0xff),   # Neon.cyan
+    [System.Drawing.Color]::FromArgb(255, 0xa5, 0x73, 0xff),   # Neon.violet
+    [System.Drawing.Color]::FromArgb(255, 0xff, 0x2e, 0x7e))   # Neon.pink
+  $blend.Positions = [single[]]@(0, 0.5, 1)
+  $rimFill.InterpolationColors = $blend
+  $g.FillPath($rimFill, $tile)
 
-  $white = [System.Drawing.Brushes]::White
-  $nodeW = $(if ($small) { 0.31 } else { 0.27 }) * $u
-  $nodeH = $(if ($small) { 0.23 } else { 0.20 }) * $u
-  $stroke = $(if ($small) { 0.09 } else { 0.062 }) * $u
-  $topY = 0.275 * $u; $bottomY = 0.725 * $u; $midY = 0.5 * $u
-  $leftX = 0.27 * $u; $centreX = 0.5 * $u; $rightX = 0.73 * $u
+  # The night inside it, dusk at the top to abyss at the bottom. Small sizes
+  # get a heavier rim so it still reads.
+  $rim = $(if ($small) { 0.09 } else { 0.05 }) * $u
+  $inner = $u - 2 * $rim
+  $glass = New-RoundedRect ($inset + $rim) ($inset + $rim) $inner $inner ($radius - $rim)
+  $innerBounds = New-Object System.Drawing.RectangleF ($inset + $rim), ($inset + $rim), $inner, $inner
+  $night = New-Object System.Drawing.Drawing2D.LinearGradientBrush $innerBounds, `
+    ([System.Drawing.Color]::FromArgb(255, 0x12, 0x10, 0x2e)), `
+    ([System.Drawing.Color]::FromArgb(255, 0x04, 0x05, 0x0d)), 90.0
+  $g.FillPath($night, $glass)
 
-  # Connectors first, so the nodes sit on top of their ends.
-  $pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::White), $stroke
-  $pen.StartCap = 'Round'; $pen.EndCap = 'Round'; $pen.LineJoin = 'Round'
+  $nodeW = $(if ($small) { 0.30 } else { 0.25 }) * $u
+  $nodeH = $(if ($small) { 0.22 } else { 0.18 }) * $u
+  $stroke = $(if ($small) { 0.085 } else { 0.055 }) * $u
+  $topY = 0.29 * $u; $bottomY = 0.71 * $u; $midY = 0.5 * $u
+  $leftX = 0.29 * $u; $centreX = 0.5 * $u; $rightX = 0.71 * $u
+
   $tree = New-Object System.Drawing.Drawing2D.GraphicsPath
   $tree.AddLine($inset + $centreX, $inset + $topY, $inset + $centreX, $inset + $midY)
   $tree.StartFigure()
@@ -68,12 +94,28 @@ function New-IconBitmap([int]$size) {
       (New-Object System.Drawing.PointF ($inset + $leftX), ($inset + $midY)),
       (New-Object System.Drawing.PointF ($inset + $rightX), ($inset + $midY)),
       (New-Object System.Drawing.PointF ($inset + $rightX), ($inset + $bottomY))))
-  $g.DrawPath($pen, $tree)
-
+  $nodes = New-Object System.Drawing.Drawing2D.GraphicsPath
   foreach ($centre in @($centreX, $topY), @($leftX, $bottomY), @($rightX, $bottomY)) {
-    $node = New-RoundedRect ($inset + $centre[0] - $nodeW / 2) ($inset + $centre[1] - $nodeH / 2) $nodeW $nodeH (0.05 * $u)
-    $g.FillPath($white, $node)
+    $nodes.AddPath((New-RoundedRect ($inset + $centre[0] - $nodeW / 2) ($inset + $centre[1] - $nodeH / 2) $nodeW $nodeH (0.05 * $u)), $false)
   }
+
+  # The glow a neon tube throws (neonGlow in the app), as ever wider and
+  # fainter strokes of the glyph's outline; too fine to show when small.
+  $cyan = [System.Drawing.Color]::FromArgb(255, 0x19, 0xe3, 0xff)
+  if (-not $small) {
+    foreach ($step in 8, 7, 6, 5, 4, 3, 2, 1) {
+      $haze = New-Object System.Drawing.Pen ([System.Drawing.Color]::FromArgb(13, $cyan)), ($stroke + $step * 0.016 * $u)
+      $haze.StartCap = 'Round'; $haze.EndCap = 'Round'; $haze.LineJoin = 'Round'
+      $g.DrawPath($haze, $tree)
+      $g.DrawPath($haze, $nodes)
+    }
+  }
+
+  # Connectors first, so the nodes sit on top of their ends.
+  $pen = New-Object System.Drawing.Pen $cyan, $stroke
+  $pen.StartCap = 'Round'; $pen.EndCap = 'Round'; $pen.LineJoin = 'Round'
+  $g.DrawPath($pen, $tree)
+  $g.FillPath((New-Object System.Drawing.SolidBrush $cyan), $nodes)
   $g.Dispose()
 
   $bmp = New-Object System.Drawing.Bitmap $size, $size, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
@@ -152,6 +194,25 @@ $writer.Flush()
 $Out = [System.IO.Path]::GetFullPath($Out)
 [System.IO.File]::WriteAllBytes($Out, $file.ToArray())
 "wrote $Out ($($file.Length) bytes, sizes $($sizes -join ', '))"
+
+function Save-Png([System.Drawing.Bitmap]$bmp, [string]$path) {
+  $path = [System.IO.Path]::GetFullPath($path)
+  [void](New-Item -ItemType Directory -Force (Split-Path $path))
+  $bmp.Save($path, [System.Drawing.Imaging.ImageFormat]::Png)
+  $bmp.Dispose()
+}
+
+# The macOS app's sizes, named as the asset catalog's Contents.json lists them.
+foreach ($size in 16, 32, 64, 128, 256, 512, 1024) {
+  Save-Png (New-IconBitmap $size (100 / 1024)) (Join-Path $MacIcons "app_icon_$size.png")
+}
+"wrote $([System.IO.Path]::GetFullPath($MacIcons))"
+
+# The hicolor theme's sizes, for Linux; the installers' artwork uses them too.
+foreach ($size in 16, 32, 48, 64, 128, 256, 512) {
+  Save-Png (New-IconBitmap $size) (Join-Path $PngIcons "$size.png")
+}
+"wrote $([System.IO.Path]::GetFullPath($PngIcons))"
 
 if ($Preview) {
   # Every size at 1:1 on a light and a dark strip, as a taskbar would show them.

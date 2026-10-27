@@ -4,6 +4,10 @@ name: Release
 # that kind, and tests it there first. Pushing a version tag (v1.2.3) publishes
 # the builds as the GitHub release of that version; running the workflow by hand
 # only builds them, as artifacts of the run.
+#
+# Each system gets an installer as well as an archive, made by the scripts in
+# packaging/: an Inno Setup installer on Windows, a .dmg on macOS, and a .deb,
+# .rpm and Arch package on Linux, whose tarball install.sh installs.
 
 on:
   push:
@@ -28,8 +32,10 @@ jobs:
         include:
           - { os: windows, arch: x64, runner: windows-2025 }
           - { os: windows, arch: arm64, runner: windows-11-arm }
-          - { os: linux, arch: x64, runner: ubuntu-24.04 }
-          - { os: linux, arch: arm64, runner: ubuntu-24.04-arm }
+          # Ubuntu 22.04, not 24.04: a build there needs GLib 2.80 and won't
+          # start on Debian 12 or RHEL 9.
+          - { os: linux, arch: x64, runner: ubuntu-22.04 }
+          - { os: linux, arch: arm64, runner: ubuntu-22.04-arm }
           # One app for both Apple silicon and Intel Macs: Flutter builds macOS
           # releases as universal binaries.
           - { os: macos, arch: universal, runner: macos-26 }
@@ -56,7 +62,8 @@ jobs:
       - run: flutter test
 
       # A tag names the version (v1.2.3 builds 1.2.3); a build by hand is named
-      # after its commit and keeps the version in pubspec.yaml.
+      # after its commit and keeps the version in pubspec.yaml, which its
+      # installers carry as a pre-release of it (1.2.3-dev.abc1234).
       - name: Name the build
         id: name
         shell: bash
@@ -64,8 +71,11 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             version="${GITHUB_REF_NAME#v}"
             echo "flags=--build-name=$version --build-number=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+            echo "version=$version" >> "$GITHUB_OUTPUT"
           else
             version="${GITHUB_SHA::7}"
+            pubspec=$(sed -n 's/^version: *\([0-9.]*\).*/\1/p' pubspec.yaml)
+            echo "version=$pubspec-dev.$version" >> "$GITHUB_OUTPUT"
           fi
           echo "package=port-why-$version-${{ matrix.os }}-${{ matrix.arch }}" >> "$GITHUB_OUTPUT"
 
@@ -77,8 +87,10 @@ jobs:
 
       - name: Package for Windows
         if: matrix.os == 'windows'
+        shell: pwsh
         env:
           PACKAGE: ${{ steps.name.outputs.package }}
+          VERSION: ${{ steps.name.outputs.version }}
         run: |
           $bundle = "build/windows/${{ matrix.arch }}/runner/Release"
           $exe = [IO.File]::ReadAllBytes("$bundle/port_why.exe")
@@ -88,28 +100,53 @@ jobs:
           foreach ($dll in 'msvcp140.dll', 'vcruntime140.dll') {
             if (-not (Test-Path "$bundle/$dll")) { throw "$dll is missing; the app would not start without the Visual C++ redistributable" }
           }
-          New-Item -ItemType Directory stage, dist | Out-Null
-          Copy-Item -Recurse $bundle stage/port-why
-          Compress-Archive -Path stage/port-why -DestinationPath "dist/$env:PACKAGE.zip"
+          # The zip and the installer (packaging/windows/port-why.iss).
+          choco install innosetup --no-progress -y
+          if ($LASTEXITCODE -ne 0) { throw "couldn't install Inno Setup" }
+          New-Item -ItemType Directory dist | Out-Null
+          Push-Location dist
+          ../packaging/windows/package.ps1 "../$bundle" $env:VERSION $env:PACKAGE
+          Pop-Location
+          if (-not (Test-Path "dist/$env:PACKAGE-setup.exe")) { throw 'no installer was built' }
 
       - name: Package for Linux
         if: matrix.os == 'linux'
         env:
           PACKAGE: ${{ steps.name.outputs.package }}
+          VERSION: ${{ steps.name.outputs.version }}
         run: |
           bundle="build/linux/${{ matrix.arch }}/release/bundle"
           expected=$([ "${{ matrix.arch }}" = arm64 ] && echo aarch64 || echo x86-64)
           info=$(file -b "$bundle/port_why")
           echo "port_why: $info"
           [[ "$info" == *"$expected"* ]] || { echo "::error::port_why is not built for ${{ matrix.arch }}"; exit 1; }
-          mkdir stage dist
-          cp -R "$bundle" stage/port-why
-          tar -czf "dist/$PACKAGE.tar.gz" -C stage port-why
+          # nfpm builds the .deb, .rpm and .pkg.tar.zst (packaging/linux/nfpm.yaml).
+          case "${{ matrix.arch }}" in
+            x64) nfpm_arch=x86_64 nfpm_sum=6d7f9a28b2f397934403950fcbba83f598b08d02edbe79a0815b3b4897341750 ;;
+            arm64) nfpm_arch=arm64 nfpm_sum=a9a75213763783b7669719e505474c748c5ad7dc66591a195619deb50f85c2f4 ;;
+          esac
+          nfpm_tgz="$RUNNER_TEMP/nfpm.tar.gz"
+          curl -fsSL -o "$nfpm_tgz" \
+            "https://github.com/goreleaser/nfpm/releases/download/v2.48.0/nfpm_2.48.0_Linux_$nfpm_arch.tar.gz"
+          echo "$nfpm_sum  $nfpm_tgz" | sha256sum -c -
+          tar -xzf "$nfpm_tgz" -C "$RUNNER_TEMP" nfpm
+          mkdir dist
+          cd dist
+          NFPM="$RUNNER_TEMP/nfpm" ../packaging/linux/package.sh "../$bundle" "$VERSION" "$PACKAGE"
 
       - name: Package for macOS
         if: matrix.os == 'macos'
         env:
           PACKAGE: ${{ steps.name.outputs.package }}
+          # Optional: with these secrets the .dmg is signed with a Developer
+          # ID and notarized (see packaging/macos/package.sh); without them
+          # the app keeps Flutter's ad hoc signature.
+          MACOS_CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+          MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
+          MACOS_NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          MACOS_NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+          MACOS_NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
         run: |
           app="build/macos/Build/Products/Release/Port Why.app"
           for binary in "$app/Contents/MacOS/Port Why" "$app/Contents/Frameworks/App.framework/App"; do
@@ -120,6 +157,9 @@ jobs:
           done
           mkdir dist
           ditto -c -k --sequesterRsrc --keepParent "$app" "dist/$PACKAGE.zip"
+          # The disk image (packaging/macos/dmg.py).
+          cd dist
+          ../packaging/macos/package.sh "../$app" "$PACKAGE"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -140,10 +180,47 @@ jobs:
         with:
           path: dist
           merge-multiple: true
+      - uses: actions/checkout@v7
+        with:
+          path: src
+      # install.sh checks the tarball it downloads against SHA256SUMS.txt.
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum port-why-* > SHA256SUMS.txt
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
+          cp src/install.sh dist/
           ls -l dist
-          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "Port Why $GITHUB_REF_NAME" --generate-notes
+          base="https://github.com/$GH_REPO/releases/download/$GITHUB_REF_NAME"
+          {
+            echo '## Install'
+            echo
+            echo 'Linux (x64, arm64), into `~/.local`:'
+            echo
+            echo '```sh'
+            echo "curl -fsSL $base/install.sh | PORTWHY_VERSION=$GITHUB_REF_NAME sh"
+            echo '```'
+            echo
+            for f in dist/port-why-*; do
+              file="${f#dist/}"
+              case "$file" in
+                *-setup.exe) what='Windows installer' ;;
+                *windows*.zip) what='Windows, to unpack anywhere' ;;
+                *.dmg) what='macOS (Apple silicon and Intel): open it and drag Port Why to Applications' ;;
+                *macos*.zip) what='macOS, the app alone' ;;
+                *.deb) what="Debian and Ubuntu: \`sudo apt install ./$file\`" ;;
+                *.rpm) what="Fedora, RHEL, openSUSE: \`sudo dnf install ./$file\` or \`sudo zypper install ./$file\`" ;;
+                *.pkg.tar.zst) what="Arch Linux: \`sudo pacman -U $file\`" ;;
+                *linux*.tar.gz) what='Linux, to unpack into `~/.local` or `/usr/local`' ;;
+                *) what='' ;;
+              esac
+              echo "- [\`$file\`]($base/$file)${what:+: $what}"
+            done
+            echo
+          } > notes.md
+          # --generate-notes adds the changelog after notes.md.
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --title "Port Why $GITHUB_REF_NAME" \
+            --notes-file notes.md --generate-notes
