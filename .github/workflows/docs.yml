@@ -1,7 +1,11 @@
 name: Documentation
 
+# One-time setup: Settings > Pages > Source > GitHub Actions.
+# Screenshots are committed, so CI only needs Node, not Flutter.
+
 on:
   push:
+    branches: [main]
     paths: ['docs/**', '.github/workflows/docs.yml']
   pull_request:
     paths: ['docs/**', '.github/workflows/docs.yml']
@@ -25,8 +29,27 @@ jobs:
           cache-dependency-path: docs/package-lock.json
       - run: npm ci
       - run: npm run build
-      - uses: actions/upload-artifact@v7
+        env:
+          DOCS_SITE: https://jsheely.github.io
+          DOCS_BASE: /port-why/
+      - uses: actions/upload-pages-artifact@v5
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
         with:
-          name: documentation-site
           path: docs/dist/
-          if-no-files-found: error
+
+  deploy:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    concurrency:
+      group: github-pages
+      cancel-in-progress: false
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
