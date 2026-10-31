@@ -80,6 +80,21 @@ refuses until you choose **Open Anyway** in System Settings > Privacy &
 Security, or run `xattr -dr com.apple.quarantine "/Applications/Port Why.app"`.
 Favorites are kept when you uninstall.
 
+## Documentation site
+
+The Astro Starlight documentation site lives in [`docs/`](docs/README.md),
+with the app's neon theme and an animated perspective circuit background
+on the homepage. To run it locally with Node.js 22.23.4 or newer:
+
+```sh
+cd docs
+npm ci
+npm run dev
+```
+
+`npm run build` checks and builds the static site with full-text search;
+`npm run preview` serves the production build.
+
 ## Getting started
 
 You need the [Flutter SDK](https://docs.flutter.dev/get-started/install) with

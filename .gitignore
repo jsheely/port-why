@@ -46,3 +46,8 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# Astro documentation site
+/docs/node_modules/
+/docs/.astro/
+/docs/dist/

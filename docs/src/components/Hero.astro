@@ -1,0 +1,34 @@
+---
+import { Image } from 'astro:assets';
+import screenshot from '../../screenshot.png';
+import PortBackdrop from './PortBackdrop.astro';
+const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+---
+<PortBackdrop />
+<section class="pw-hero" aria-labelledby="_top">
+  <div class="pw-kicker"><span></span> YOUR LOCALHOST, EXPLAINED</div>
+  <div class="pw-hero-layout">
+    <div>
+      <h1 id="_top" data-page-title>What is holding<br /><em>that port open?</em></h1>
+      <p class="pw-lead">Meet the process. Find the project.<br />Get back to building.</p>
+      <p class="pw-intro">A clear owner for every open port. Trace it to the framework, folder, Docker container, or WSL process behind it.</p>
+      <div class="pw-actions">
+        <a class="pw-button" href={`${base}/getting-started/installation/`}>Get started <span aria-hidden="true">↗</span></a>
+        <a class="pw-secondary" href="https://github.com/jsheely/port-why/releases/latest">Download the app <span aria-hidden="true">↓</span></a>
+      </div>
+      <div class="pw-platforms">WINDOWS <span>/</span> macOS <span>/</span> LINUX</div>
+    </div>
+    <div class="pw-readout" aria-label="Example: port 3000 belongs to a Next.js project">
+      <div class="pw-readout-label"><span>TCP / LISTENING</span><span class="pw-demo">EXAMPLE</span></div>
+      <div class="pw-port"><span>:</span>3000</div>
+      <div class="pw-owner">Next.js <span>on Node.js</span></div>
+      <dl><div><dt>PROJECT</dt><dd>marketing-site</dd></div><div><dt>FOLDER</dt><dd>C:\dev\marketing-site</dd></div></dl>
+      <div class="pw-evidence"><span aria-hidden="true">↳</span> From port to project. In one glance.</div>
+    </div>
+  </div>
+  <figure class="pw-screen">
+    <div class="pw-screen-bar"><span>PORT WHY / THE LOCALHOST DECK</span><span>● SCANS EVERY 2s</span></div>
+    <Image src={screenshot} alt="Port Why showing port cards with their frameworks, projects, folders, and process IDs." widths={[640, 960, 1264]} sizes="(max-width: 50rem) 100vw, 72rem" loading="eager" />
+    <figcaption>Actual Windows app · illustrative demo data</figcaption>
+  </figure>
+</section>

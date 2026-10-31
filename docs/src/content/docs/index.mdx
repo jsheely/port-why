@@ -1,0 +1,31 @@
+---
+title: Your localhost, explained
+description: Find what is holding a port open with Port Why for Windows, macOS, and Linux.
+template: splash
+hero:
+  title: What is holding that port open?
+---
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+## Less detective work. More building.
+
+<CardGrid>
+  <Card title="Find the owner" icon="magnifier">
+    See the process, runtime, framework, and project behind a listening port. Open a card to inspect the evidence.
+  </Card>
+  <Card title="Follow the relay" icon="random">
+    Trace Docker and WSL forwarding to the server or container actually listening, instead of stopping at a proxy.
+  </Card>
+  <Card title="Take the next step" icon="terminal">
+    Open the project folder, pin a favorite port, or stop the owning process or container with confirmation.
+  </Card>
+</CardGrid>
+
+## Pick up the trail
+
+<CardGrid>
+  <LinkCard title="Your first scan" description="From launch to a port's full command line." href={`${import.meta.env.BASE_URL}getting-started/first-scan/`} />
+  <LinkCard title="Docker & WSL" description="Understand what is behind a forwarded port." href={`${import.meta.env.BASE_URL}guides/docker-wsl/`} />
+  <LinkCard title="How it works" description="Native scanners, project manifests, and detection." href={`${import.meta.env.BASE_URL}reference/architecture/`} />
+  <LinkCard title="Build from source" description="Run the Flutter app and contribute to the project." href={`${import.meta.env.BASE_URL}reference/development/`} />
+</CardGrid>
