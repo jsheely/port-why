@@ -66,15 +66,20 @@ export function startPortBackdrop(canvas: HTMLCanvasElement) {
         }
       } else {
         ctx.globalAlpha = alpha;
-        ctx.fillText(port, p.x - 20, p.y - 7);
-        // Broken horizontal fragments trail behind the port identifier.
-        for (let bit = 0; bit < 6; bit++) {
-          const tail = point(Math.max(0, progress - bit * .012));
-          ctx.globalAlpha = alpha * (1 - bit / 6);
-          ctx.fillRect(tail.x, tail.y + bit % 2 * 3, -direction * (bit % 2 ? 5 : 12), 1);
+        ctx.textAlign = 'center';
+        ctx.fillText(port, p.x, p.y - 13);
+        // A centered equalizer travels with the label, with no head or tapered tail.
+        // Each transmission keeps its own length and smoothly oscillating rhythm.
+        const bars = 9 + ((i * 7 + cycle * 3) % 5) * 4;
+        const spacing = width < 600 ? 3 : 4;
+        const waveWidth = (bars - 1) * spacing;
+        for (let bar = 0; bar < bars; bar++) {
+          const phase = time * (1.8 + i % 4 * .3) - bar * .65 * direction + i;
+          const amplitude = (Math.sin(phase) + Math.sin(phase * .57 + bar * .4)) / 2;
+          const barHeight = 3 + Math.abs(amplitude) * 11;
+          ctx.globalAlpha = alpha * (.65 + Math.abs(amplitude) * .35);
+          ctx.fillRect(p.x - waveWidth / 2 + bar * spacing - 1, p.y - barHeight / 2, 2, barHeight);
         }
-        ctx.globalAlpha = alpha * .7;
-        ctx.strokeRect(p.x - 25, p.y - 21, 6, 6);
       }
       ctx.restore();
     }
