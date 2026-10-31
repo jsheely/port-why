@@ -83,7 +83,7 @@ Favorites are kept when you uninstall.
 ## Documentation site
 
 The Astro Starlight documentation site lives in [`docs/`](docs/README.md),
-with the app's neon theme and an animated perspective circuit background
+with the app's neon theme and an animated cyberpunk circuit background
 on the homepage. To run it locally with Node.js 22.23.4 or newer:
 
 ```sh
