@@ -19,37 +19,60 @@ export function startPortBackdrop(canvas: HTMLCanvasElement) {
   };
 
   function drawTransfers(rail: number) {
-    // Staggered transmissions: both directions, some delivered, some fragmented.
+    // Scheduled transmissions on fixed buses, moving at full display frame rate.
     const count = width < 600 ? 12 : 26;
+    const lanes = count / 2;
+    const snap = (value: number) => Math.round(value / 4) * 4;
     for (let i = 0; i < count; i++) {
-      const clock = time + i * 1.618;
-      const cycle = Math.floor(clock / 19);
-      const age = clock % 19;
-      if (age > 13) continue;
-      const direction = (i + cycle) % 2 ? -1 : 1;
-      const progress = Math.min(age / 11, 1);
+      const lane = Math.floor(i / 2);
+      const clock = time + lane * .75 + (i % 2) * 8;
+      const cycle = Math.floor(clock / 16);
+      const age = clock % 16;
+      if (age > 12) continue;
+      const direction = i % 2 ? -1 : 1;
       const start = rail * .7;
       const distance = width - start * 2;
-      const point = (t: number) => ({
-        x: direction > 0 ? start + distance * t : width - start - distance * t,
-        y: height * (.12 + ((i * 7) % count) / (count - 1) * .8) + cameraY * .12
-          + smooth((t - .33) / .12) * 30 - smooth((t - .66) / .12) * 30,
-      });
+      const baseline = snap(height * (.14 + lane / (lanes - 1) * .72));
+      const bend = lane % 2 ? -16 : 16;
+      const ramp = (t: number, from: number, duration: number) => Math.max(0, Math.min(1, (t - from) / duration));
+      const point = (t: number) => {
+        const along = .32 * ramp(t, 1, 2) + .36 * ramp(t, 4.25, 2.25) + .32 * ramp(t, 8, 2);
+        return {
+          x: direction > 0 ? start + distance * along : width - start - distance * along,
+          y: baseline + bend * ramp(t, 3.75, .5) - bend * ramp(t, 7.5, .5),
+        };
+      };
       const breaks = (i + cycle) % 3 === 1;
-      const breakAt = .38 + (i % 3) * .12;
-      const shattered = breaks && progress >= breakAt;
-      const p = point(shattered ? breakAt : progress);
+      const breakAt = lane % 2 ? 7.5 : 3.75;
+      const shattered = breaks && age >= breakAt;
+      const p = point(shattered ? breakAt : age);
       const color = colors[(i + cycle) % colors.length];
       const port = ':' + ports[(i * 3 + cycle) % ports.length];
-      const envelope = smooth(age / 1.4) * (1 - smooth((age - 10.5) / 2.5));
+      const envelope = smooth(age / .5) * (1 - smooth((age - 10.5) / 1.5));
       // Low contrast through the reading column, stronger as signals approach hardware.
       const edge = Math.abs(p.x / width - .5) * 2;
       const alpha = envelope * (.16 + .3 * edge * edge);
       ctx.save();
       ctx.fillStyle = ctx.strokeStyle = color;
       ctx.font = `${width < 600 ? 11 : 14}px "Cascadia Mono", Consolas, monospace`;
+      // Junctions and short dashed bus segments expose the routing structure.
+      ctx.globalAlpha = .06;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 8]);
+      ctx.beginPath();
+      for (const t of [0, 3, 4.25, 6.5, 8, 10]) {
+        const node = point(t);
+        if (t === 0) ctx.moveTo(node.x, node.y); else ctx.lineTo(node.x, node.y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = .18;
+      for (const t of [3, 6.5]) {
+        const node = point(t);
+        ctx.strokeRect(node.x - 3, node.y - 3, 6, 6);
+      }
       if (shattered) {
-        const elapsed = age - breakAt * 11;
+        const elapsed = age - breakAt;
         if (elapsed < 2.8) {
           // Deterministic debris: no random per-frame noise, flash, or screen shake.
           const fade = 1 - smooth(elapsed / 2.8);
@@ -57,8 +80,8 @@ export function startPortBackdrop(canvas: HTMLCanvasElement) {
             const angle = pixel * 2.39996 + i;
             const speed = 14 + (pixel * 17 % 47);
             const travel = elapsed * speed;
-            const x = p.x + (pixel % 8 - 4) * 5 + Math.cos(angle) * travel + direction * elapsed * 15;
-            const y = p.y + (Math.floor(pixel / 8) - 1) * 5 + Math.sin(angle) * travel + elapsed * elapsed * 5;
+            const x = p.x + (pixel % 8 - 4) * 5 + Math.cos(angle) * travel;
+            const y = p.y + (Math.floor(pixel / 8) - 1) * 5 + Math.sin(angle) * travel;
             ctx.globalAlpha = alpha * fade * (.5 + pixel % 3 * .25);
             const size = pixel % 4 === 0 ? 3 : 2;
             ctx.fillRect(x, y, size, size);
@@ -69,17 +92,24 @@ export function startPortBackdrop(canvas: HTMLCanvasElement) {
         ctx.textAlign = 'center';
         ctx.fillText(port, p.x, p.y - 13);
         // A centered equalizer travels with the label, with no head or tapered tail.
-        // Each transmission keeps its own length and smoothly oscillating rhythm.
+        // Discrete signal targets blend briefly instead of jumping between frames.
         const bars = 9 + ((i * 7 + cycle * 3) % 5) * 4;
         const spacing = width < 600 ? 3 : 4;
         const waveWidth = (bars - 1) * spacing;
         for (let bar = 0; bar < bars; bar++) {
-          const phase = time * (1.8 + i % 4 * .3) - bar * .65 * direction + i;
-          const amplitude = (Math.sin(phase) + Math.sin(phase * .57 + bar * .4)) / 2;
-          const barHeight = 3 + Math.abs(amplitude) * 11;
-          ctx.globalAlpha = alpha * (.65 + Math.abs(amplitude) * .35);
+          const signalClock = clock * 3;
+          const tick = Math.floor(signalClock);
+          const previous = (bar * 7 + tick * 3 + i) % 5;
+          const next = (bar * 7 + (tick + 1) * 3 + i) % 5;
+          const level = previous + (next - previous) * smooth((signalClock - tick) / .6);
+          const barHeight = 2 + level * 2;
+          ctx.globalAlpha = alpha * (.65 + level * .08);
           ctx.fillRect(p.x - waveWidth / 2 + bar * spacing - 1, p.y - barHeight / 2, 2, barHeight);
         }
+        // Compact status marks make the deliberate pauses read as queuing.
+        const queued = age < 1 || (age >= 3 && age < 3.75) || (age >= 6.5 && age < 7.5);
+        ctx.globalAlpha = alpha * .7;
+        ctx.fillRect(p.x - 3, p.y + 10, queued ? 6 : 14, 2);
       }
       ctx.restore();
     }
