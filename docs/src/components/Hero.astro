@@ -2,6 +2,7 @@
 import { Image } from 'astro:assets';
 import screenshot from '../../screenshot.png';
 import PortBackdrop from './PortBackdrop.astro';
+import PortExamples from './PortExamples.astro';
 const base = import.meta.env.BASE_URL.replace(/\/$/, '');
 ---
 <PortBackdrop />
@@ -18,13 +19,7 @@ const base = import.meta.env.BASE_URL.replace(/\/$/, '');
       </div>
       <div class="pw-platforms">WINDOWS <span>/</span> macOS <span>/</span> LINUX</div>
     </div>
-    <div class="pw-readout" aria-label="Example: port 3000 belongs to a Next.js project">
-      <div class="pw-readout-label"><span>TCP / LISTENING</span><span class="pw-demo">EXAMPLE</span></div>
-      <div class="pw-port"><span>:</span>3000</div>
-      <div class="pw-owner">Next.js <span>on Node.js</span></div>
-      <dl><div><dt>PROJECT</dt><dd>marketing-site</dd></div><div><dt>FOLDER</dt><dd>C:\dev\marketing-site</dd></div></dl>
-      <div class="pw-evidence"><span aria-hidden="true">↳</span> From port to project. In one glance.</div>
-    </div>
+    <PortExamples />
   </div>
   <figure class="pw-screen">
     <div class="pw-screen-bar"><span>PORT WHY / THE LOCALHOST DECK</span><span>● SCANS EVERY 2s</span></div>

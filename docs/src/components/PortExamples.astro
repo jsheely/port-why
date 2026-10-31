@@ -1,0 +1,180 @@
+---
+import {
+  siNextdotjs, siReact, siVuedotjs, siAngular, siSvelte, siAstro, siNuxt,
+  siVite, siStorybook, siExpress, siNestjs, siDjango, siFastapi, siFlask,
+  siRubyonrails, siLaravel, siSpringboot, siDotnet, siGo, siNginx,
+  siApache, siPostgresql, siMysql, siRedis, siMongodb,
+} from 'simple-icons';
+
+// Illustrative local setups, not a claim that every tool always uses this port.
+const examples = [
+  { port: 3000, name: 'Next.js', runtime: 'on Node.js', project: 'marketing-site', icon: siNextdotjs },
+  { port: 5173, name: 'React', runtime: 'via Vite', project: 'customer-portal', icon: siReact },
+  { port: 5174, name: 'Vue', runtime: 'via Vite', project: 'storefront', icon: siVuedotjs },
+  { port: 4200, name: 'Angular', runtime: 'on Node.js', project: 'admin-console', icon: siAngular },
+  { port: 5173, name: 'SvelteKit', runtime: 'via Vite', project: 'booking-app', icon: siSvelte },
+  { port: 4321, name: 'Astro', runtime: 'on Node.js', project: 'port-why-docs', icon: siAstro },
+  { port: 3000, name: 'Nuxt', runtime: 'on Node.js', project: 'content-studio', icon: siNuxt },
+  { port: 4173, name: 'Vite', runtime: 'preview server', project: 'design-preview', icon: siVite },
+  { port: 6006, name: 'Storybook', runtime: 'on Node.js', project: 'design-system', icon: siStorybook },
+  { port: 3001, name: 'Express', runtime: 'on Node.js', project: 'checkout-api', icon: siExpress },
+  { port: 3000, name: 'NestJS', runtime: 'on Node.js', project: 'accounts-api', icon: siNestjs },
+  { port: 8000, name: 'Django', runtime: 'on Python', project: 'reports', icon: siDjango },
+  { port: 8000, name: 'FastAPI', runtime: 'via Uvicorn', project: 'orders-api', icon: siFastapi },
+  { port: 5000, name: 'Flask', runtime: 'on Python', project: 'webhook-listener', icon: siFlask },
+  { port: 3000, name: 'Rails', runtime: 'on Ruby', project: 'support-desk', icon: siRubyonrails },
+  { port: 8000, name: 'Laravel', runtime: 'on PHP', project: 'billing-portal', icon: siLaravel },
+  { port: 8080, name: 'Spring Boot', runtime: 'on Java', project: 'inventory-api', icon: siSpringboot },
+  { port: 5001, name: 'ASP.NET Core', runtime: 'on .NET', project: 'Billing.Api', icon: siDotnet },
+  { port: 8080, name: 'Go', runtime: 'HTTP server', project: 'gateway', icon: siGo },
+  { port: 443, name: 'Nginx', runtime: 'HTTPS proxy', project: 'edge-proxy', icon: siNginx },
+  { port: 80, name: 'Apache', runtime: 'HTTP server', project: 'local-web', icon: siApache },
+  { port: 5432, name: 'PostgreSQL', runtime: 'database service', project: 'orders-db', icon: siPostgresql },
+  { port: 3306, name: 'MySQL', runtime: 'database service', project: 'catalog-db', icon: siMysql },
+  { port: 6379, name: 'Redis', runtime: 'cache service', project: 'session-cache', icon: siRedis },
+  { port: 27017, name: 'MongoDB', runtime: 'database service', project: 'events-db', icon: siMongodb },
+].map((example, index) => ({
+  ...example,
+  os: index % 2 === 0 ? 'WINDOWS' : 'macOS',
+  folder: index % 2 === 0 ? `C:\\dev\\${example.project}` : `/Users/alex/Developer/${example.project}`,
+}));
+---
+<port-examples class="pw-readout" role="region" aria-label="Illustrative port examples" aria-roledescription="carousel">
+  <div class="pw-readout-label"><span>TCP / LISTENING</span><span class="pw-demo">EXAMPLE</span></div>
+  <div class="example-slides" aria-live="off">
+    <div class="example-scan" aria-hidden="true"></div>
+    {examples.map((example, index) => (
+      <div data-example hidden={index !== 0} role="group" aria-roledescription="slide" aria-label={`${index + 1} of ${examples.length}: ${example.name} on port ${example.port}`}>
+        <div class="pw-port"><span>:</span>{example.port}</div>
+        <div class="example-service">
+          <span class="service-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26"><path fill="currentColor" d={example.icon.path} /></svg></span>
+          <div class="pw-owner">{example.name}<span>{example.runtime}</span></div>
+        </div>
+        <dl><div><dt>PROJECT</dt><dd>{example.project}</dd></div><div><dt>FOLDER <span class="example-os">{example.os}</span></dt><dd class="example-folder">{example.folder}</dd></div></dl>
+      </div>
+    ))}
+  </div>
+  <div class="example-progress" role="img" aria-label="Example 1 of 25">
+    {examples.map((_, index) => <span class:list={['example-dot', { 'is-current': index === 0 }]} aria-hidden="true"></span>)}
+  </div>
+  <div class="pw-evidence"><span aria-hidden="true">↳</span> From port to project. In one glance.</div>
+</port-examples>
+
+<script>
+  class PortExamples extends HTMLElement {
+    connectedCallback() {
+      const slides = Array.from(this.querySelectorAll<HTMLElement>('[data-example]'));
+      const progress = this.querySelector<HTMLElement>('.example-progress')!;
+      const dots = Array.from(progress.querySelectorAll<HTMLElement>('.example-dot'));
+      const motion = matchMedia('(prefers-reduced-motion: reduce)');
+      const abort = new AbortController();
+      const { signal } = abort;
+      let index = 0;
+      let timer: ReturnType<typeof setInterval> | undefined;
+      let animations: Animation[] = [];
+      const settle = () => {
+        animations.forEach((animation) => animation.cancel());
+        animations = [];
+        slides.forEach((slide, position) => {
+          slide.hidden = position !== index;
+          slide.classList.remove('is-departing');
+          slide.removeAttribute('aria-hidden');
+        });
+      };
+      const animate = (element: Element, frames: Keyframe[], options: KeyframeAnimationOptions) => {
+        const animation = element.animate(frames, options);
+        animations.push(animation);
+        return animation;
+      };
+      const stop = () => { clearInterval(timer); timer = undefined; };
+      const show = (next: number) => {
+        settle();
+        const outgoing = slides[index];
+        const direction = next < index ? -1 : 1;
+        outgoing.hidden = true;
+        index = (next + slides.length) % slides.length;
+        const incoming = slides[index];
+        incoming.hidden = false;
+        progress.setAttribute('aria-label', `Example ${index + 1} of ${slides.length}`);
+        dots.forEach((dot, position) => dot.classList.toggle('is-current', position === index));
+        if (motion.matches) return;
+
+        outgoing.hidden = false;
+        outgoing.classList.add('is-departing');
+        outgoing.setAttribute('aria-hidden', 'true');
+        const departure = animate(outgoing, [
+          { opacity: 1, transform: 'translateX(0) scale(1)', filter: 'blur(0)' },
+          { opacity: 0, transform: `translateX(${-direction * 42}px) scale(.96)`, filter: 'blur(3px)' },
+        ], { duration: 240, easing: 'ease-in', fill: 'forwards' });
+        departure.finished.then(() => {
+          outgoing.hidden = true;
+          outgoing.classList.remove('is-departing');
+        }).catch(() => {}); // Cleanup or reduced motion can cancel the transition.
+
+        // A rolling port readout, then the service and evidence lock into place.
+        animate(incoming.querySelector('.pw-port')!, [
+          { opacity: 0, transform: `translateY(${direction * 35}px) rotateX(-65deg)`, filter: 'blur(4px)' },
+          { opacity: 1, transform: 'translateY(-3px) rotateX(8deg)', filter: 'blur(0)', offset: .8 },
+          { opacity: 1, transform: 'translateY(0) rotateX(0deg)', filter: 'blur(0)' },
+        ], { duration: 620, delay: 160, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards' });
+        animate(incoming.querySelector('.service-icon')!, [
+          { opacity: 0, transform: `translateX(${direction * 28}px) rotate(-18deg) scale(.65)` },
+          { opacity: 1, transform: 'translateX(0) rotate(0) scale(1)' },
+        ], { duration: 500, delay: 280, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards' });
+        const details = [incoming.querySelector('.pw-owner')!, ...incoming.querySelectorAll('dl > div')];
+        details.forEach((element, part) => animate(element, [
+          { opacity: 0, transform: `translateX(${direction * 24}px)`, clipPath: 'inset(0 100% 0 0)' },
+          { opacity: 1, transform: 'translateX(0)', clipPath: 'inset(0 0% 0 0)' },
+        ], { duration: 520, delay: 340 + part * 110, easing: 'cubic-bezier(.16,1,.3,1)', fill: 'backwards' }));
+        animate(this.querySelector('.example-scan')!, [
+          { top: '0%', opacity: 0 },
+          { top: '10%', opacity: .65, offset: .15 },
+          { top: '90%', opacity: .45, offset: .85 },
+          { top: '100%', opacity: 0 },
+        ], { duration: 950, easing: 'ease-in-out' });
+      };
+      const restart = () => {
+        stop();
+        if (!motion.matches && !document.hidden && !this.matches(':hover')) {
+          timer = setInterval(() => show(index + 1), 4500);
+        }
+      };
+      this.addEventListener('mouseenter', stop, { signal });
+      this.addEventListener('mouseleave', restart, { signal });
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) settle();
+        restart();
+      }, { signal });
+      motion.addEventListener('change', () => { settle(); restart(); }, { signal });
+      this.cleanup = () => { stop(); settle(); abort.abort(); };
+      restart();
+    }
+    cleanup?: () => void;
+    disconnectedCallback() { this.cleanup?.(); }
+  }
+  if (!customElements.get('port-examples')) customElements.define('port-examples', PortExamples);
+</script>
+
+<style>
+  port-examples { display: block; min-width: 0; }
+  [hidden] { display: none !important; }
+  .example-slides { position: relative; isolation: isolate; overflow: hidden; perspective: 800px; }
+  [data-example].is-departing { position: absolute; inset: 0; pointer-events: none; }
+  .example-scan { position: absolute; z-index: 2; left: 0; right: 0; height: 2px; opacity: 0; pointer-events: none;
+    background: linear-gradient(90deg, transparent, #19e3ff 30%, #a573ff 70%, transparent);
+    box-shadow: 0 0 14px #19e3ff66, 0 -10px 28px #19e3ff22; }
+  .pw-demo { white-space: nowrap; }
+  .example-progress { display: flex; align-items: center; justify-content: space-between; gap: 3px; max-width: 260px; margin: 1rem auto 0; }
+  .example-dot { flex: 0 0 4px; height: 4px; border-radius: 50%; background: #4b5784; }
+  .example-dot.is-current { background: #19e3ff; box-shadow: 0 0 8px #19e3ff99; transform: scale(1.5); }
+  @media (prefers-reduced-motion: no-preference) {
+    .example-dot { transition: background-color .3s, box-shadow .3s, transform .3s; }
+  }
+  .example-service { display: flex; align-items: center; gap: .8rem; min-height: 3.5rem; }
+  .service-icon { display: grid; place-items: center; flex: 0 0 44px; height: 44px; color: #19e3ff; border: 1px solid #19e3ff55; background: #19e3ff0b; border-radius: 9px; }
+  .pw-owner { line-height: 1.25; }
+  .pw-owner > span { display: block; margin: .35rem 0 0; }
+  .example-os { color: #a573ff; margin-left: .6rem; }
+  .example-folder { min-height: 3.6em; }
+  @media (max-width: 25rem) { .pw-readout-label { font-size: .6rem; gap: .5rem; } }
+</style>
