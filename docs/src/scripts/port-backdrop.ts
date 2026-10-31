@@ -13,6 +13,11 @@ export function startPortBackdrop(canvas: HTMLCanvasElement) {
   let disposed = false;
 
   const ports = ['3000', '5173', '8080', '5432', '6379', '8000', '443', '4200'];
+  // Stable pseudo-random samples keep glitches repeatable within a short burst.
+  const noise = (seed: number) => {
+    const value = Math.sin(seed * 127.1 + 311.7) * 43758.5453;
+    return value - Math.floor(value);
+  };
   const smooth = (value: number) => {
     const t = Math.max(0, Math.min(1, value));
     return t * t * (3 - 2 * t);
@@ -90,7 +95,49 @@ export function startPortBackdrop(canvas: HTMLCanvasElement) {
       } else {
         ctx.globalAlpha = alpha;
         ctx.textAlign = 'center';
-        ctx.fillText(port, p.x, p.y - 13);
+        // Occasional transmission corruption, only while a packet is moving.
+        // Each packet gets its own short burst; never flash the entire scene.
+        const moving = (age > 1 && age < 3) || (age > 4.25 && age < 6.5) || (age > 8 && age < 10);
+        const window = Math.floor(clock / 1.7);
+        const seed = i * 97 + window * 43;
+        const burstStart = .3 + noise(seed + 1) * .9;
+        const burstAge = clock % 1.7 - burstStart;
+        const glitch = !motion.matches && moving && noise(seed) < .5 && burstAge >= 0 && burstAge < .42;
+        if (glitch) {
+          const frameSeed = seed + Math.floor(burstAge * 16) * 131;
+          const corrupted = ':' + [...port.slice(1)].map((digit, position) =>
+            String((Number(digit) + 1 + Math.floor(noise(frameSeed + position * 17) * 9)) % 10),
+          ).join('');
+          const labelWidth = ctx.measureText(corrupted).width;
+          const strength = Math.min(.6, alpha * 1.7);
+          // Broken horizontal slices shift independently, like a damaged display.
+          for (let slice = 0; slice < 4; slice++) {
+            const shift = (noise(frameSeed + slice * 23) - .5) * 16;
+            ctx.save();
+            ctx.beginPath();
+            ctx.rect(p.x - labelWidth / 2 - 12, p.y - 27 + slice * 5, labelWidth + 24, 5);
+            ctx.clip();
+            ctx.fillStyle = '#ff2e7e'; ctx.globalAlpha = strength * .7;
+            ctx.fillText(corrupted, p.x + shift + 4, p.y - 13);
+            ctx.fillStyle = '#19e3ff'; ctx.globalAlpha = strength;
+            ctx.fillText(corrupted, p.x + shift - 2, p.y - 13);
+            ctx.restore();
+          }
+          // Local static stays confined to the label rather than flashing the page.
+          for (let speck = 0; speck < 22; speck++) {
+            const n = frameSeed + speck * 31;
+            ctx.fillStyle = speck % 3 === 0 ? '#ff2e7e' : '#19e3ff';
+            ctx.globalAlpha = strength * (.3 + noise(n + 3) * .5);
+            ctx.fillRect(
+              p.x + (noise(n) - .5) * (labelWidth + 24),
+              p.y - 28 + noise(n + 1) * 23,
+              2 + noise(n + 2) * 10, speck % 4 === 0 ? 2 : 1,
+            );
+          }
+          ctx.fillStyle = color;
+        } else {
+          ctx.fillText(port, p.x, p.y - 13);
+        }
         // A centered equalizer travels with the label, with no head or tapered tail.
         // Discrete signal targets blend briefly instead of jumping between frames.
         const bars = 9 + ((i * 7 + cycle * 3) % 5) * 4;
