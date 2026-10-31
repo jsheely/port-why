@@ -3,8 +3,14 @@ import {
   siNextdotjs, siReact, siVuedotjs, siAngular, siSvelte, siAstro, siNuxt,
   siVite, siStorybook, siExpress, siNestjs, siDjango, siFastapi, siFlask,
   siRubyonrails, siLaravel, siSpringboot, siDotnet, siGo, siNginx,
-  siApache, siPostgresql, siMysql, siRedis, siMongodb,
+  siApache, siPostgresql, siMysql, siRedis, siMongodb, siApple, siLinux,
 } from 'simple-icons';
+
+const platforms = [
+  { name: 'WINDOWS', root: 'C:\\dev\\', icon: 'M2 2h9v9H2zM13 2h9v9h-9zM2 13h9v9H2zM13 13h9v9h-9z' },
+  { name: 'macOS', root: '/Users/alex/Developer/', icon: siApple.path },
+  { name: 'LINUX', root: '/home/alex/projects/', icon: siLinux.path },
+];
 
 // Illustrative local setups, not a claim that every tool always uses this port.
 const examples = [
@@ -35,8 +41,8 @@ const examples = [
   { port: 27017, name: 'MongoDB', runtime: 'database service', project: 'events-db', icon: siMongodb },
 ].map((example, index) => ({
   ...example,
-  os: index % 2 === 0 ? 'WINDOWS' : 'macOS',
-  folder: index % 2 === 0 ? `C:\\dev\\${example.project}` : `/Users/alex/Developer/${example.project}`,
+  platform: platforms[index % platforms.length],
+  folder: platforms[index % platforms.length].root + example.project,
 }));
 ---
 <port-examples class="pw-readout" role="region" aria-label="Illustrative port examples" aria-roledescription="carousel">
@@ -50,7 +56,7 @@ const examples = [
           <span class="service-icon" aria-hidden="true"><svg viewBox="0 0 24 24" width="26" height="26"><path fill="currentColor" d={example.icon.path} /></svg></span>
           <div class="pw-owner">{example.name}<span>{example.runtime}</span></div>
         </div>
-        <dl><div><dt>PROJECT</dt><dd>{example.project}</dd></div><div><dt>FOLDER <span class="example-os">{example.os}</span></dt><dd class="example-folder">{example.folder}</dd></div></dl>
+        <dl><div><dt>PROJECT</dt><dd>{example.project}</dd></div><div><dt>FOLDER <span class="example-os"><svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true"><path fill="currentColor" d={example.platform.icon} /></svg>{example.platform.name}</span></dt><dd class="example-folder">{example.folder}</dd></div></dl>
       </div>
     ))}
   </div>
@@ -174,7 +180,8 @@ const examples = [
   .service-icon { display: grid; place-items: center; flex: 0 0 44px; height: 44px; color: #19e3ff; border: 1px solid #19e3ff55; background: #19e3ff0b; border-radius: 9px; }
   .pw-owner { line-height: 1.25; }
   .pw-owner > span { display: block; margin: .35rem 0 0; }
-  .example-os { color: #a573ff; margin-left: .6rem; }
+  .example-os { display: inline-flex; align-items: center; gap: .35rem; vertical-align: middle; color: #a573ff; margin-left: .6rem; }
+  .example-os svg { flex-shrink: 0; }
   .example-folder { min-height: 3.6em; }
   @media (max-width: 25rem) { .pw-readout-label { font-size: .6rem; gap: .5rem; } }
 </style>
