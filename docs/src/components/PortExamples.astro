@@ -46,7 +46,18 @@ const examples = [
 }));
 ---
 <port-examples class="pw-readout" role="region" aria-label="Illustrative port examples" aria-roledescription="carousel">
-  <div class="pw-readout-label"><span>TCP / LISTENING</span><span class="pw-demo">EXAMPLE</span></div>
+  <div class="pw-readout-label">
+    <span>TCP / LISTENING</span>
+    <span class="line-health" role="img" aria-label="Illustrative connection health monitor">
+      <span class="line-health-dot" aria-hidden="true"></span>
+      <svg viewBox="0 0 96 24" width="96" height="24" fill="none" aria-hidden="true">
+        <path class="line-health-grid" d="M0 6H96M0 12H96M0 18H96M16 0V24M32 0V24M48 0V24M64 0V24M80 0V24" />
+        <g class="line-health-trace">
+          {[0, 96].map((offset) => <path transform={`translate(${offset} 0)`} d="M0 12H12L16 10L20 14L24 12H36L40 8L44 19L48 3L52 15L56 12H68L72 10L76 14L80 12H96" />)}
+        </g>
+      </svg>
+    </span>
+  </div>
   <div class="example-slides" aria-live="off">
     <div class="example-scan" aria-hidden="true"></div>
     {examples.map((example, index) => (
@@ -169,11 +180,18 @@ const examples = [
   .example-scan { position: absolute; z-index: 2; left: 0; right: 0; height: 2px; opacity: 0; pointer-events: none;
     background: linear-gradient(90deg, transparent, #19e3ff 30%, #a573ff 70%, transparent);
     box-shadow: 0 0 14px #19e3ff66, 0 -10px 28px #19e3ff22; }
-  .pw-demo { white-space: nowrap; }
+  .pw-readout-label { align-items: center; }
+  .line-health { display: inline-flex; align-items: center; gap: .5rem; flex-shrink: 0; color: #35ff9f; }
+  .line-health-dot { width: 4px; height: 4px; border-radius: 50%; background: currentColor; box-shadow: 0 0 7px #35ff9f88; }
+  .line-health svg { display: block; overflow: hidden; border-radius: 3px; background: #35ff9f06; }
+  .line-health-grid { stroke: #35ff9f15; stroke-width: .5; }
+  .line-health-trace { stroke: currentColor; stroke-width: 1.4; stroke-linejoin: round; filter: drop-shadow(0 0 2px #35ff9f66); }
+  @keyframes line-health-flow { to { transform: translateX(-96px); } }
   .example-progress { display: flex; align-items: center; justify-content: space-between; gap: 3px; max-width: 260px; margin: 1rem auto 0; }
   .example-dot { flex: 0 0 4px; height: 4px; border-radius: 50%; background: #4b5784; }
   .example-dot.is-current { background: #19e3ff; box-shadow: 0 0 8px #19e3ff99; transform: scale(1.5); }
   @media (prefers-reduced-motion: no-preference) {
+    .line-health-trace { animation: line-health-flow 3s linear infinite; }
     .example-dot { transition: background-color .3s, box-shadow .3s, transform .3s; }
   }
   .example-service { display: flex; align-items: center; gap: .8rem; min-height: 3.5rem; }

@@ -68,7 +68,6 @@ h1, h2, h3 { letter-spacing: -.025em; }
 .pw-platforms span { color: #4b5784; margin: 0 .75rem; }
 .pw-readout { position: relative; padding: 1.7rem; background: linear-gradient(130deg, #183746c9, #141226e8); border: 1px solid #19e3ff66; border-radius: 18px 18px 3px 18px; box-shadow: 0 20px 80px #0005, 0 0 70px #19e3ff09, inset 0 1px #ffffff20; }
 .pw-readout-label { display: flex; justify-content: space-between; gap: 1rem; color: #a8b6d4; }
-.pw-demo { color: var(--pw-violet); }
 .pw-port { font: 600 clamp(3rem, 6vw, 5.6rem)/1.35 var(--sl-font-mono); color: var(--pw-cyan); text-shadow: 0 0 30px #19e3ff33; margin-top: .8rem; }
 .pw-port > span { color: var(--pw-pink); }
 .pw-owner { font-size: 1.4rem; color: #e9f0ff; }
