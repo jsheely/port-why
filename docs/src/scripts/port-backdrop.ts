@@ -47,8 +47,13 @@ export function startPortBackdrop(canvas: HTMLCanvasElement) {
           y: baseline + bend * ramp(t, 3.75, .5) - bend * ramp(t, 7.5, .5),
         };
       };
-      const breaks = (i + cycle) % 3 === 1;
-      const breakAt = lane % 2 ? 7.5 : 3.75;
+      // Burst decisions are independent of digit glitches. Prefer the exposed
+      // outer legs: fixed center junctions were hidden behind the hero/cards.
+      const explosionSeed = i * 173 + cycle * 619 + 47;
+      const breaks = noise(explosionSeed) < .45;
+      const burstLeg = noise(explosionSeed + 1);
+      const breakAt = (burstLeg < .45 ? 1.15 : burstLeg < .9 ? 8.35 : 4.5)
+        + noise(explosionSeed + 2) * 1.2;
       const shattered = breaks && age >= breakAt;
       const p = point(shattered ? breakAt : age);
       const color = colors[(i + cycle) % colors.length];
@@ -81,14 +86,17 @@ export function startPortBackdrop(canvas: HTMLCanvasElement) {
         if (elapsed < 2.8) {
           // Deterministic debris: no random per-frame noise, flash, or screen shake.
           const fade = 1 - smooth(elapsed / 2.8);
-          for (let pixel = 0; pixel < 24; pixel++) {
-            const angle = pixel * 2.39996 + i;
-            const speed = 14 + (pixel * 17 % 47);
-            const travel = elapsed * speed;
-            const x = p.x + (pixel % 8 - 4) * 5 + Math.cos(angle) * travel;
-            const y = p.y + (Math.floor(pixel / 8) - 1) * 5 + Math.sin(angle) * travel;
-            ctx.globalAlpha = alpha * fade * (.5 + pixel % 3 * .25);
-            const size = pixel % 4 === 0 ? 3 : 2;
+          const burstAlpha = Math.min(.7, .3 + edge * .4);
+          for (let pixel = 0; pixel < 36; pixel++) {
+            const angle = pixel * 2.39996 + noise(explosionSeed + 3) * Math.PI * 2;
+            const speed = 24 + noise(explosionSeed + pixel * 11) * 65;
+            // Fast initial breakup, then the fragments slow and dissolve.
+            const travel = (1 - Math.exp(-elapsed * 1.6)) * speed;
+            const x = p.x + (pixel % 9 - 4) * 5 + Math.cos(angle) * travel;
+            const y = p.y - 10 + (Math.floor(pixel / 9) - 1.5) * 5 + Math.sin(angle) * travel;
+            ctx.fillStyle = pixel % 4 === 0 ? '#ff2e7e' : color;
+            ctx.globalAlpha = burstAlpha * fade * (.6 + pixel % 3 * .2);
+            const size = pixel % 4 === 0 ? 4 : 2;
             ctx.fillRect(x, y, size, size);
           }
         }
