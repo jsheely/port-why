@@ -36,3 +36,14 @@ from the repository root. This renders the real Flutter widgets with demo data a
 Windows Fonts. The homepage serves responsive PNGs to preserve small text and icons.
 
 Reference: [Starlight custom styles](https://starlight.astro.build/guides/css-and-tailwind/).
+
+## Social preview
+
+`public/og-image.png` is the shared 1200 × 630 Open Graph and Twitter card.
+Regenerate it with `npm run social-image` after changing the screenshot, icon,
+or the editable SVG layout in `scripts/social-image.mjs`. Render on Windows for
+the app's Bahnschrift and Cascadia Mono fonts. The committed PNG is used in CI;
+no font installation or image generation is needed during deployment.
+
+`astro.config.mjs` supplies absolute image URLs using the deployment's
+`DOCS_SITE` and `DOCS_BASE`, with the production Pages URL as the local fallback.

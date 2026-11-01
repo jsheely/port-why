@@ -1,6 +1,10 @@
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 
+const socialBase = (process.env.DOCS_BASE ?? '/port-why/').replace(/\/$/, '');
+const socialImage = new URL(`${socialBase}/og-image.png`, process.env.DOCS_SITE || 'https://jsheely.github.io').href;
+const socialAlt = 'Port Why: What is holding that port open? The app shows ports, frameworks, projects, and folders. Available for Windows, macOS, and Linux.';
+
 export default defineConfig({
   // Set these for the target host; links and assets also work under a subpath.
   site: process.env.DOCS_SITE || undefined,
@@ -10,6 +14,15 @@ export default defineConfig({
     description: 'Your localhost, explained. Documentation for Port Why.',
     logo: { src: './src/assets/icon.png' },
     favicon: '/favicon.png',
+    head: [
+      { tag: 'meta', attrs: { property: 'og:image', content: socialImage } },
+      { tag: 'meta', attrs: { property: 'og:image:type', content: 'image/png' } },
+      { tag: 'meta', attrs: { property: 'og:image:width', content: '1200' } },
+      { tag: 'meta', attrs: { property: 'og:image:height', content: '630' } },
+      { tag: 'meta', attrs: { property: 'og:image:alt', content: socialAlt } },
+      { tag: 'meta', attrs: { name: 'twitter:image', content: socialImage } },
+      { tag: 'meta', attrs: { name: 'twitter:image:alt', content: socialAlt } },
+    ],
     customCss: ['./src/styles/custom.css'],
     components: {
       ThemeSelect: './src/components/ThemeSelect.astro',
